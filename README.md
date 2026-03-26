@@ -28,8 +28,9 @@ This codebase implements a visual geo-localization system for drones that matche
 
 - **ap_ukf**: Unscented Kalman Filter that fuses multiple sensor inputs:
   - NGPS absolute position (1-2 Hz)
-  - VIO relative pose (10-20 Hz) 
+  - VIO relative pose (10-20 Hz)
   - IMU data (high frequency)
+
   Outputs fused odometry at 10-20 Hz for flight control.
 
 - **ap_vips**: Visual-Inertial Odometry system that provides high-frequency relative pose estimates optimized for high-altitude flight.
@@ -72,9 +73,9 @@ This codebase implements a visual geo-localization system for drones that matche
 ## Installation
 
 See individual package READMEs:
-- `ap_ngps_ros2/README.md`
-- `ap_ukf/README.md`
-- `ap_vips/README.md`
+- [ap_ngps_ros2/README.md](ap_ngps_ros2/README.md)
+- [ap_ukf/README.md](ap_ukf/README.md)
+- [ap_vips/README.md](ap_vips/README.md)
 
 ## Documentation
 
