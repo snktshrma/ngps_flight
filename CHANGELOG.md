@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-03-27] - Docker + Distrobox setup
+
+### Added
+
+- Added setup for docker + distrobox for easy replication of sim and hardware tests
+
 ## [2025-12-20] - V2: Squashed commits and added docs
 
 ### Added

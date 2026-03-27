@@ -1,0 +1,52 @@
+# Dockerfile.dev
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    ros-humble-mavros \
+    ros-humble-mavros-extras \
+    ros-humble-image-transport \
+    ros-humble-cv-bridge \
+    ros-humble-vision-opencv \
+    libopencv-dev \
+    libeigen3-dev \
+    libboost-all-dev \
+    libyaml-cpp-dev \
+    libceres-dev \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    git cmake build-essential \
+    curl lsb-release gnupg \
+    python3-vcstool \
+    default-jre \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# GeographicLib for MAVROS
+RUN wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
+    && bash install_geographiclib_datasets.sh \
+    && rm install_geographiclib_datasets.sh
+
+# Gazebo Harmonic
+RUN curl https://packages.osrfoundation.org/gazebo.gpg \
+    --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] \
+    https://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+    | tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gz-harmonic \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG USERNAME=dev
+ARG USER_UID=1000
+RUN useradd -m -u $USER_UID -s /bin/bash dev \
+    && echo "dev ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+USER $USERNAME
+
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc \
+    && echo "source ~/ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc
+
+WORKDIR /home/$USERNAME/ngps_ws
+CMD ["/bin/bash"]

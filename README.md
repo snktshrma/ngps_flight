@@ -72,7 +72,144 @@ This codebase implements a visual geo-localization system for drones that matche
 
 ## Installation
 
+**Step 1: Install Docker Engine**
+
+- Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
+- Apply the Linux post-installation configuration as non-root user: [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
+
+**Step 2: NVIDIA Container Toolkit (optional)**
+
+> If NVIDIA GPU is present.
+- Install the toolkit: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+- Configure Docker to use the NVIDIA runtime and restart the daemon:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+**Step 3: Clone the repository and build the development image**
+
+```bash
+mkdir -p ~/ngps_ws/src
+cd ~/ngps_ws/src
+git clone git@github.com:snktshrma/ngps_flight.git
+cd ~/ngps_ws/src/ngps_flight
+docker build -f Dockerfile.dev -t vps-dev:latest .
+```
+
+> **For Docker only:** Skip **Step 4** and **Step 5**.
+>
+> With NVIDIA GPU (requires **Step 2**):
+>
+> ```bash
+> docker run -it \
+>   --name vps-dev \
+>   --network host \
+>   --privileged \
+>   --ipc host \
+>   --gpus all \
+>   -v ~/ngps_ws:/home/dev/ngps_ws \
+>   -e DISPLAY=$DISPLAY \
+>   -v /tmp/.X11-unix:/tmp/.X11-unix \
+>   vps-dev:latest
+> ```
+>
+> Without NVIDIA GPU:
+>
+> ```bash
+> docker run -it \
+>   --name vps-dev \
+>   --network host \
+>   --privileged \
+>   --ipc host \
+>   -v ~/ngps_ws:/home/dev/ngps_ws \
+>   -e DISPLAY=$DISPLAY \
+>   -v /tmp/.X11-unix:/tmp/.X11-unix \
+>   vps-dev:latest
+> ```
+> To start again:
+> ```bash
+> docker start vps-dev
+> docker exec -it vps-dev /bin/bash
+> ```
+
+**Step 4: Install Distrobox**
+
+For Ubuntu:
+
+```bash
+sudo apt install distrobox
+
+export DBX_CONTAINER_MANAGER=docker
+echo "export DBX_CONTAINER_MANAGER=docker" >> ~/.bashrc
+```
+
+**Step 5: Create the Distrobox**
+
+- With NVIDIA GPU (requires **Step 2**):
+
+```bash
+distrobox create \
+  --name vps-dev \
+  --image vps-dev:latest \
+  --additional-flags "--privileged --ipc=host --gpus all"
+```
+
+- Without GPU (no NVIDIA GPU or no toolkit):
+
+```bash
+distrobox create \
+  --name vps-dev \
+  --image vps-dev:latest \
+  --additional-flags "--privileged --ipc=host"
+```
+
+**Step 6: Enter and initialize the workspace**
+
+```bash
+distrobox enter vps-dev
+```
+
+Inside the container:
+
+```bash
+bash ~/ngps_ws/src/ngps_flight/setup.sh
+# When done,
+source ~/.bashrc
+```
+
+> **Distrobox:** The host user home directory is mounted; workspace paths such as `~/ngps_ws` match the host, while binaries and libraries resolve from the container image.
+
+**Step 7: Verify the simulation stack**
+
+```bash
+ros2 launch ardupilot_gz_bringup iris_runway.launch.py
+```
+
+- Expected result: ArduPilot DDS and Gazebo Harmonic start with the runway simulation.
+
+#### Removing or reconnecting
+
+**Distrobox:**:
+
+```bash
+distrobox stop vps-dev
+distrobox rm vps-dev
+```
+**Docker**:
+
+```bash
+docker stop vps-dev
+docker rm vps-dev
+```
+
+---
+
+### Package-level setup
+
 See individual package READMEs:
+
 - [ap_ngps_ros2/README.md](ap_ngps_ros2/README.md)
 - [ap_ukf/README.md](ap_ukf/README.md)
 - [ap_vips/README.md](ap_vips/README.md)
@@ -83,9 +220,9 @@ See individual package READMEs:
 - [Camera-IMU Calibration](CAMERA_IMU_CALIBRATION.md) - [Google Docs](https://docs.google.com/document/d/13JY4MAfdqjsa-Oa39xT4HW6WFFT-KQloymyGb0LvuGo/edit?tab=t.0#heading=h.43j03vqklwxn)
 - [Non-GPS Navigation Setup](NON_GPS_NAVIGATION.md) - [Google Docs](https://docs.google.com/document/d/1Opsji8ZT2YeRjR8lPMAb49Ai44oMDmwoFYnSJPwfXz0/edit?tab=t.0#heading=h.d9zawrpqff1s)
 
-## Acknowledgements
+## Special mentions
 
-A huge shoutout to my partner in disguise, ChatGPT, for generating tests and helping with packaging this codebase.
+Ofcourse, ChatGPT :)
 
 ## Safety & Ethical Considerations
 
