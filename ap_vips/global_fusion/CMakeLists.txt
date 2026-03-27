@@ -15,13 +15,12 @@ find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 
-find_package(Ceres REQUIRED)
+find_package(Ceres REQUIRED CONFIG)
 
 add_subdirectory(./ThirdParty/GeographicLib/)
 
 include_directories(
   # ${catkin_INCLUDE_DIRS}
-  ${CERES_INCLUDE_DIRS}
   ./ThirdParty/GeographicLib/include/
 )
 
@@ -35,7 +34,7 @@ add_executable(global_fusion_node
 # added from DEBUG
 ament_target_dependencies(global_fusion_node rclcpp nav_msgs geometry_msgs sensor_msgs visualization_msgs rclpy)
 
-target_link_libraries(global_fusion_node ${CERES_LIBRARIES} libGeographiccc) # ${catkin_LIBRARIES})
+target_link_libraries(global_fusion_node Ceres::ceres libGeographiccc) # ${catkin_LIBRARIES})
 
 
 # Install
