@@ -1,0 +1,29 @@
+map_match_node:
+  ros__parameters:
+    camera_topic: "/camera/image_raw"
+
+    # absolute path to a UTM-projected GeoTIFF (EPSG:326xx or EPSG:327xx)
+    ref_tile_path: ""
+
+    # how often to attempt a map fix (milliseconds)
+    match_interval_ms: 200.0
+
+    # side length of the centre-crop ROI sent to AKAZE (pixels)
+    roi_size: 512
+
+    # minimum USAC_MAGSAC inliers required to accept a fix
+    min_inliers: 12
+
+    # UTM origin for local-frame conversion: UTM - (E0, N0) -> (x, y) metres
+    # leave both at 0.0 to use the tile's own top-left corner as origin
+    origin_easting: 0.0
+    origin_northing: 0.0
+
+    # sliding window: half-width in reference tile pixels around last known fix
+    # set to 0 to always match against the full tile
+    search_window_px: 1500
+
+    output_frame: "map"
+
+    # XY position variance (m^2) placed on the published Odometry covariance
+    position_covariance_xy: 2.0
