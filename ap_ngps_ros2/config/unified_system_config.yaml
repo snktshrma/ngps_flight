@@ -5,23 +5,52 @@ input_topics:
 ngps_topics:
   input: "/camera/image_raw"
   output: "/odometry/vps"
+  optional_pixel_utm_map_param: "pixel_utm_map_path"
 
 vips_topics:
   input:
     camera: "/camera/image_raw"
     imu: "/imu/data"
   output:
-    odometry: "/odometry/vio"
+    odometry_raw: "/odometry/vio_raw"
     path: "/vips/path"
     pose: "/vips/pose"
 
+vio_origin_relay:
+  input:
+    vio_raw: "/odometry/vio_raw"
+    vps: "/odometry/vps"
+  output:
+    vio_aligned: "/odometry/vio"
+
+fusion:
+  # Select with launch: fusion_backend:=ap_ukf | fusion_backend:=robot_localization
+  backend_default: "ap_ukf"
+  robot_localization_config: "ap_ngps_ros2/config/rl_ekf.yaml"
+
 ukf_topics:
   input:
-    imu: "/imu/data"
     vio: "/odometry/vio"
     vps: "/odometry/vps"
   output:
     fused_odometry: "/fused/odometry"
+
+robot_localization_topics:
+  input:
+    vio: "/odometry/vio"
+    vps: "/odometry/vps"
+  output:
+    fused_odometry: "/fused/odometry"
+  node: "ekf_filter_node"
+  package: "robot_localization"
+
+pose_assembly_optional:
+  input:
+    fused: "/fused/odometry"
+    imu_heading: ""  # e.g. /imu/data if you want compass yaw on output
+    altitude: ""     # e.g. /mavros/global_position/rel_alt if bridged
+  output:
+    fused_full: "/odometry/fused_full"
 
 frequencies:
   camera: "30 Hz"
@@ -34,14 +63,16 @@ config_files:
   ngps: "ap_ngps_ros2/config/ngps_config.yaml"
   vips: "vins/config/high_alt/high_alt_mono_imu_config.yaml"
   ukf: "ap_ukf/params/estimator_config.yaml"
+  robot_localization_ekf: "ap_ngps_ros2/config/rl_ekf.yaml"
 
 launch_command: "ros2 launch ap_ngps_ros2 unified_localization_simple.launch.py"
 launch_with_reference: "ros2 launch ap_ngps_ros2 unified_localization_simple.launch.py reference_image_path:=/path/to/reference.jpg"
 launch_with_camera: "ros2 launch ap_ngps_ros2 unified_localization_simple.launch.py camera_topic:=/my_camera/image_raw"
 launch_sim_time: "ros2 launch ap_ngps_ros2 unified_localization_simple.launch.py use_sim_time:=true"
+launch_robot_localization: "ros2 launch ap_ngps_ros2 unified_localization_simple.launch.py fusion_backend:=robot_localization"
 
-check_nodes: "ros2 node list | grep -E '(ngps_localization_node|vips_node|fusion_ros)'"
-monitor_frequencies: "ros2 topic hz /fused/odometry /odometry/vio /odometry/vps /imu/data"
+check_nodes: "ros2 node list | grep -E '(ngps_localization_node|vips_node|fusion_ros|ekf_filter_node)'"
+monitor_frequencies: "ros2 topic hz /fused/odometry /odometry/vio /odometry/vio_raw /odometry/vps /imu/data"
 view_odometry: "ros2 topic echo /fused/odometry"
 view_vio: "ros2 topic echo /odometry/vio"
 view_vps: "ros2 topic echo /odometry/vps"

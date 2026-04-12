@@ -24,3 +24,8 @@ ngps_localization_node:
     reference_max_lat: 0.0
     reference_altitude: 0.0
     enable_global_coordinates: false
+    pixel_utm_map_path: ""
+    first_fix_min_matches: 45
+    first_fix_min_mean_score: 0.48
+    first_fix_min_inlier_ratio: 0.35
+    vps_pose_variance_base_m2: 4.0

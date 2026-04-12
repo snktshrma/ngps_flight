@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, NavSatFix
 from geometry_msgs.msg import PoseStamped, PointStamped
+from nav_msgs.msg import Odometry
 from std_msgs.msg import Float64, Header
 from cv_bridge import CvBridge
 import cv2 as cv
@@ -45,23 +46,16 @@ class NGPSLocalizationNode(Node):
         self.rot_std_thresh = 15.0
         self.max_rot_change = 30.0
         self.last_valid_rot = 0.0
-        
-        self.load_reference_image()
-        
-        self.pose_pub = self.create_publisher(PoseStamped, 'ngps/pose', 10)
-        self.position_pub = self.create_publisher(PointStamped, 'ngps/position', 10)
-        self.rotation_pub = self.create_publisher(Float64, 'ngps/rotation', 10)
-        self.debug_image_pub = self.create_publisher(Image, 'ngps/debug_image', 10)
-        self.global_position_pub = self.create_publisher(NavSatFix, 'ngps/global_position', 10)
-        self.ecef_position_pub = self.create_publisher(PointStamped, 'ngps/ecef_position', 10)
-        
-        self.image_sub = self.create_subscription(
-            Image,
-            '/camera/image_raw',
-            self.image_callback,
-            10
-        )
-        
+        self.vps_origin_xy = None
+        self._pixel_utm_map = None
+        self._vps_origin_en = None
+        self._local_metric_utm = None
+        self._first_vps_odom_published = False
+        self._last_num_matches = 0
+        self._last_mean_score = 0.0
+        self._last_inlier_ratio = 0.0
+        self._first_fix_gate_log_t = -1e9
+
         self.declare_parameter('reference_image_path', '')
         self.declare_parameter('kernel_size', 300)
         self.declare_parameter('match_threshold', 0.5)
@@ -73,15 +67,35 @@ class NGPSLocalizationNode(Node):
         self.declare_parameter('enable_rotation_smoothing', True)
         self.declare_parameter('enable_rotation_validation', True)
         self.declare_parameter('frame_id', 'map')
-        
-        # Georeferencing parameters for reference image
         self.declare_parameter('reference_min_lon', 0.0)
         self.declare_parameter('reference_min_lat', 0.0)
         self.declare_parameter('reference_max_lon', 0.0)
         self.declare_parameter('reference_max_lat', 0.0)
-        self.declare_parameter('reference_altitude', 0.0)  # Altitude in meters (AGL or MSL)
+        self.declare_parameter('reference_altitude', 0.0)
         self.declare_parameter('enable_global_coordinates', False)
-        
+        self.declare_parameter('pixel_utm_map_path', '')
+        self.declare_parameter('first_fix_min_matches', 45)
+        self.declare_parameter('first_fix_min_mean_score', 0.48)
+        self.declare_parameter('first_fix_min_inlier_ratio', 0.35)
+        self.declare_parameter('vps_pose_variance_base_m2', 4.0)
+
+        self.load_reference_image()
+
+        self.pose_pub = self.create_publisher(PoseStamped, 'ngps/pose', 10)
+        self.position_pub = self.create_publisher(PointStamped, 'ngps/position', 10)
+        self.rotation_pub = self.create_publisher(Float64, 'ngps/rotation', 10)
+        self.debug_image_pub = self.create_publisher(Image, 'ngps/debug_image', 10)
+        self.global_position_pub = self.create_publisher(NavSatFix, 'ngps/global_position', 10)
+        self.ecef_position_pub = self.create_publisher(PointStamped, 'ngps/ecef_position', 10)
+        self.odom_vps_pub = self.create_publisher(Odometry, 'odometry/vps', 10)
+
+        self.image_sub = self.create_subscription(
+            Image,
+            '/camera/image_raw',
+            self.image_callback,
+            10
+        )
+
         print('NGPS Localization Node initialized')
     
     def load_reference_image(self):
@@ -102,7 +116,82 @@ class NGPSLocalizationNode(Node):
         
         self.imarrayB = cv.rotate(self.imarray, cv.ROTATE_90_CLOCKWISE)
         self.h, self.w, self.c = self.imarray.shape
-    
+        self._try_load_pixel_utm_map()
+
+    def _try_load_pixel_utm_map(self):
+        path = self.get_parameter('pixel_utm_map_path').get_parameter_value().string_value
+        if not path or not os.path.exists(path):
+            return
+        try:
+            arr = np.load(path)
+            if arr.shape[0] != self.h or arr.shape[1] != self.w or arr.shape[2] != 2:
+                self.get_logger().error(
+                    f'pixel_utm_map shape {arr.shape} must match reference ({self.h}, {self.w}, 2)'
+                )
+                return
+            self._pixel_utm_map = arr.astype(np.float64)
+            self.get_logger().info(f'Loaded pixel_utm_map from {path}')
+        except Exception as e:
+            self.get_logger().error(f'Failed to load pixel_utm_map: {e}')
+
+    def _bilinear_utm(self, px, py):
+        if self._pixel_utm_map is None:
+            return None
+        H, W, _ = self._pixel_utm_map.shape
+        x = float(np.clip(px, 0.0, W - 1.001))
+        y = float(np.clip(py, 0.0, H - 1.001))
+        x0 = int(np.floor(x))
+        y0 = int(np.floor(y))
+        x1 = min(x0 + 1, W - 1)
+        y1 = min(y0 + 1, H - 1)
+        fx = x - x0
+        fy = y - y0
+        e00 = self._pixel_utm_map[y0, x0, 0]
+        e10 = self._pixel_utm_map[y0, x1, 0]
+        e01 = self._pixel_utm_map[y1, x0, 0]
+        e11 = self._pixel_utm_map[y1, x1, 0]
+        n00 = self._pixel_utm_map[y0, x0, 1]
+        n10 = self._pixel_utm_map[y0, x1, 1]
+        n01 = self._pixel_utm_map[y1, x0, 1]
+        n11 = self._pixel_utm_map[y1, x1, 1]
+        E = (1 - fx) * (1 - fy) * e00 + fx * (1 - fy) * e10 + (1 - fx) * fy * e01 + fx * fy * e11
+        N = (1 - fx) * (1 - fy) * n00 + fx * (1 - fy) * n10 + (1 - fx) * fy * n01 + fx * fy * n11
+        return (E, N)
+
+    def _update_local_metric_for_publish(self):
+        self._local_metric_utm = None
+        if self._pixel_utm_map is None:
+            return
+        en = self._bilinear_utm(float(self.base_x), float(self.base_y))
+        if en is None:
+            return
+        if self._vps_origin_en is None:
+            self._vps_origin_en = (en[0], en[1])
+        self._local_metric_utm = (
+            en[0] - self._vps_origin_en[0],
+            en[1] - self._vps_origin_en[1],
+        )
+
+    def _passes_first_fix_gate(self) -> bool:
+        n = int(self._last_num_matches)
+        ms = float(self._last_mean_score)
+        ir = float(self._last_inlier_ratio)
+        pmin = self.get_parameter('first_fix_min_matches').get_parameter_value().integer_value
+        smin = self.get_parameter('first_fix_min_mean_score').get_parameter_value().double_value
+        irmin = self.get_parameter('first_fix_min_inlier_ratio').get_parameter_value().double_value
+        return n >= pmin and ms >= smin and ir >= irmin
+
+    def _vps_xy_variance_m2(self) -> tuple:
+        base = self.get_parameter('vps_pose_variance_base_m2').get_parameter_value().double_value
+        n = max(1, int(self._last_num_matches))
+        ms = max(0.01, float(self._last_mean_score))
+        ir = max(0.01, float(self._last_inlier_ratio))
+        q = (n / 40.0) * ms * ir
+        q = max(0.15, min(2.0, q))
+        v = base / q
+        v = max(0.25, min(25.0, v))
+        return (v, v)
+
     def kernel_show(self, center_row, center_col, rot=0.0):
         ksize = self.get_parameter('kernel_size').get_parameter_value().integer_value
         
@@ -310,7 +399,16 @@ class NGPSLocalizationNode(Node):
             
             if M is None:
                 return
-            
+#################### Inliner ratio : TODO: Sanket
+            if mask is not None:
+                inlier_ratio = float(np.count_nonzero(mask)) / float(mask.size)
+            else:
+                inlier_ratio = 1.0
+            mean_score = float(scores0[valid].float().mean().cpu().item())
+            self._last_num_matches = num_matches
+            self._last_mean_score = mean_score
+            self._last_inlier_ratio = inlier_ratio
+
             rots = []
             
             theta_hom = self.calculate_rotation_from_homography(M)
@@ -386,7 +484,53 @@ class NGPSLocalizationNode(Node):
         rotation_msg = Float64()
         rotation_msg.data = self.theta_deg
         self.rotation_pub.publish(rotation_msg)
-        
+
+        if not self._first_vps_odom_published and not self._passes_first_fix_gate():
+            now = self.get_clock().now().nanoseconds * 1e-9
+            if now - self._first_fix_gate_log_t >= 8.0:
+                self._first_fix_gate_log_t = now
+                self.get_logger().info(
+                    f'first-fix gate: skip /odometry/vps (matches={self._last_num_matches} '
+                    f'mean_score={self._last_mean_score:.3f} inlier_ratio={self._last_inlier_ratio:.2f})'
+                )
+            return
+
+        self._update_local_metric_for_publish()
+        if self._local_metric_utm is not None:
+            lx, ly = self._local_metric_utm[0], self._local_metric_utm[1]
+        else:
+            if self.vps_origin_xy is None:
+                self.vps_origin_xy = (float(self.x), float(self.y))
+            lx = float(self.x) - self.vps_origin_xy[0]
+            ly = float(self.y) - self.vps_origin_xy[1]
+        vx, vy = self._vps_xy_variance_m2()
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = frame_id
+        odom.child_frame_id = frame_id + '_vps'
+        odom.pose.pose.position.x = lx
+        odom.pose.pose.position.y = ly
+        odom.pose.pose.position.z = 0.0
+        odom.pose.pose.orientation.w = 1.0
+        odom.twist.twist.linear.x = 0.0
+        odom.twist.twist.linear.y = 0.0
+        odom.twist.twist.linear.z = 0.0
+        for i in range(36):
+            odom.pose.covariance[i] = 0.0
+        odom.pose.covariance[0] = vx
+        odom.pose.covariance[7] = vy
+        odom.pose.covariance[14] = 1e6
+        odom.pose.covariance[21] = 1e6
+        odom.pose.covariance[28] = 1e6
+        odom.pose.covariance[35] = 1e6
+        self.odom_vps_pub.publish(odom)
+        if not self._first_vps_odom_published:
+            self._first_vps_odom_published = True
+            self.get_logger().info(
+                f'first VPS /odometry/vps published (matches={self._last_num_matches} '
+                f'mean_score={self._last_mean_score:.3f} inlier_ratio={self._last_inlier_ratio:.2f})'
+            )
+
         enable_global = self.get_parameter('enable_global_coordinates').get_parameter_value().bool_value
         if enable_global:
             self._publish_global_coordinates(current_time)

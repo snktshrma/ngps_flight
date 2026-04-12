@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [2026-04-05] - 4D `ap_ukf` + NGPS VPS odometry
+
+### Changed
+
+- **`ap_ukf`:** 4D local fusion (x, y, vx, vy); IMU removed; first VPS bootstraps the filter; VPS soft correction over N frames; 4×4 YAML covariances.
+- **`ap_ngps_ros2`:** Publishes `nav_msgs/Odometry` on `odometry/vps` (local xy after first-fix origin).
+- **Launches:** `unified_localization*.launch.py` no longer remap IMU into `fusion_ros`.
+
+## [2026-04-03] - ardupilot_gazebo iris SDF aligned with `ros2` branch
+
+### Fixed
+
+- `iris_with_standoffs/model.sdf`: collision mesh URI changed from `package://ardupilot_gazebo/.../iris_collision.stl` to `model://iris_with_standoffs/meshes/iris_collision.stl` so plain `gz sim` (no ROS/ament) resolves assets via `GZ_SIM_RESOURCE_PATH` instead of failing with “uri could not be resolved”.
+- Restored `ardupilot_gazebo/models/iris_with_gimbal/model.sdf` and `models/gimbal_small_3d/model.sdf` from upstream `ros2`. Our branch had diverged: non-merged `model://` includes and scoped link names (`iris_with_standoffs::base_link`) caused `sdformat_urdf` to fail with “Failed to find sdf canonical link [base_link]” when launching `iris_runway.launch.py`. The `ros2` iris uses `<include merge="true">`, `package://` URIs, and flat `base_link` / `gimbal_link` joint names; the gimbal model on `ros2` names the root link `gimbal_link` (not `base_link`) to match that joint.
+
 ## [2026-03-27] - Docker + Distrobox setup
 
 ### Added

@@ -5,3 +5,9 @@ vo_node:
     camera_topic: "/camera/image_raw"
     camera_info_topic: "/camera/camera_info"
     output_frame: "odom"
+    child_frame_id: "camera_optical"
+    use_tf_for_scale: false
+    plane_distance_m: 50.0
+    publish_odometry: true
+    odometry_topic: "/odometry/vo"
+    pnp_reprojection_error: 8.0

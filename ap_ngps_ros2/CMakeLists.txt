@@ -12,15 +12,18 @@ find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 
-# Install Python modules
-ament_python_install_package(${PROJECT_NAME})
+# Install Python modules (sources live under src/<pkg>/ per colcon layout)
+ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR src/${PROJECT_NAME})
 
 # Install Python scripts
 install(PROGRAMS
   src/ap_ngps_ros2/ngps_localization_node.py
+  src/ap_ngps_ros2/vio_origin_relay.py
+  src/ap_ngps_ros2/pose_assembly_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

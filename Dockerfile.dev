@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     python3-vcstool \
     default-jre \
     wget \
+    gitk \
+    
     && rm -rf /var/lib/apt/lists/*
 
 # GeographicLib for MAVROS
