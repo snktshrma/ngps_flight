@@ -77,7 +77,13 @@ This codebase implements a visual geo-localization system for drones that matche
 - Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
 - Apply the Linux post-installation configuration as non-root user: [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
 
-**Step 2: NVIDIA Container Toolkit (optional)**
+If you are running WSL2 on Windows:
+
+- Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) (not Docker Engine inside WSL).
+- In Docker Desktop, select **Settings, Resources, WSL Integration** and enable your distro.
+- Verify Docker works by running, `docker run hello-world`
+
+**Step 2: NVIDIA Container Toolkit (optional, WSL2 users should skip this step)**
 
 > If NVIDIA GPU is present.
 - Install the toolkit: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
