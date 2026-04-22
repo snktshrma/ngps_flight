@@ -3,6 +3,21 @@ sudo -v
 
 set -e
 
+# Require USER to be set (needed by ArduPilot prereqs script for usermod)
+if [[ -z "$USER" ]]; then
+    echo "ERROR: USER environment variable is not set."
+    echo "Run setup as: USER=dev bash setup.sh"
+    exit 1
+fi
+
+# Validate expected workspace layout
+if [[ ! -d ~/ngps_ws/src/ngps_flight ]]; then
+    echo "ERROR: ~/ngps_ws/src/ngps_flight not found."
+    echo "Clone the repo there or create a symlink:"
+    echo "  ln -s /path/to/ngps_flight ~/ngps_ws/src/ngps_flight"
+    exit 1
+fi
+
 echo "Setting up ngps_ws :)"
 cd ~/ngps_ws
 
