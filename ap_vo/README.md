@@ -5,12 +5,11 @@ Standalone **monocular visual odometry** for the NGPS stack: SIFT features, Lowe
 ## Requirements
 
 - ROS 2 (tested with Humble)
-- Python: `opencv-python` (SIFT is in the main wheels since OpenCV 4.4+), `numpy`, `tf-transformations` (ROS package or pip)
+- Python: `opencv-python` (SIFT is in the main wheels since OpenCV 4.4+), `numpy`, `scipy`
 - `sensor_msgs`, `geometry_msgs`, `nav_msgs`, `cv_bridge`, `tf2_ros`
 
 ```bash
-sudo apt install ros-${ROS_DISTRO}-nav-msgs ros-${ROS_DISTRO}-tf-transformations \
-  python3-opencv python3-numpy
+sudo apt install ros-${ROS_DISTRO}-nav-msgs python3-opencv python3-numpy python3-scipy
 ```
 
 ## Build

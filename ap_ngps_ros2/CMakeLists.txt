@@ -24,6 +24,7 @@ install(PROGRAMS
   src/ap_ngps_ros2/ngps_localization_node.py
   src/ap_ngps_ros2/vio_origin_relay.py
   src/ap_ngps_ros2/pose_assembly_node.py
+  src/ap_ngps_ros2/mjpeg_sat_cam_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

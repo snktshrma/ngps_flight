@@ -10,8 +10,8 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import CameraInfo, Image
+from scipy.spatial.transform import Rotation
 import tf2_ros
-import tf_transformations
 
 
 class VONode(Node):
@@ -203,7 +203,7 @@ class VONode(Node):
         T = np.eye(4)
         T[:3, :3] = self._R_wc
         T[:3, 3] = self._t_wc
-        q = tf_transformations.quaternion_from_matrix(T)
+        q = Rotation.from_matrix(T[:3, :3].astype(np.float64)).as_quat()
         out.pose.pose.orientation.x = float(q[0])
         out.pose.pose.orientation.y = float(q[1])
         out.pose.pose.orientation.z = float(q[2])
@@ -237,7 +237,7 @@ class VONode(Node):
         T = np.eye(4)
         T[:3, :3] = self._R_wc
         T[:3, 3] = self._t_wc
-        q = tf_transformations.quaternion_from_matrix(T)
+        q = Rotation.from_matrix(T[:3, :3].astype(np.float64)).as_quat()
         odom.pose.pose.orientation.x = float(q[0])
         odom.pose.pose.orientation.y = float(q[1])
         odom.pose.pose.orientation.z = float(q[2])
