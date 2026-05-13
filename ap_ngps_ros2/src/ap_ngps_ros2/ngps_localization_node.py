@@ -9,6 +9,7 @@ from geometry_msgs.msg import PoseStamped, PointStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
 from std_msgs.msg import Float64
+from builtin_interfaces.msg import Time as BuiltinTime
 from cv_bridge import CvBridge
 import cv2 as cv
 import numpy as np
@@ -18,9 +19,13 @@ from lightglue import LightGlue, SuperPoint
 from lightglue.utils import load_image_arr, rbd
 import gc
 import json
+import math
 import os
+import time
 from pathlib import Path
 from typing import Optional, Tuple
+from collections import deque
+
 from ap_ngps_ros2 import transformations as tf_
 
 
@@ -32,6 +37,7 @@ class NGPSLocalizationNode(Node):
         self.bridge = CvBridge()
         
         self.tot_rot = 0.0
+        self._pending_kernel_rot_step_deg = 0.0
         self.base_x = 0
         self.base_y = 0
         self.x = 0
@@ -56,6 +62,7 @@ class NGPSLocalizationNode(Node):
         self._last_inlier_ratio = 0.0
         self._first_fix_gate_log_t = -1e9
         self._altitude_m = 0.0
+        self._prev_kernel_xy: Optional[Tuple[float, float]] = None
 
         self.declare_parameter('reference_image_path', '')
         self.declare_parameter('reference_max_edge', 4096)
@@ -90,6 +97,20 @@ class NGPSLocalizationNode(Node):
         self.declare_parameter('first_fix_min_matches', 45)
         self.declare_parameter('first_fix_min_mean_score', 0.48)
         self.declare_parameter('first_fix_min_inlier_ratio', 0.35)
+        self.declare_parameter(
+            'min_frame_inlier_ratio',
+            0.0,
+        )
+        self.declare_parameter(
+            'max_kernel_translation_step_px',
+            0.0,
+        )
+        self.declare_parameter('reject_degenerate_homography', True)
+        self.declare_parameter('kernel_rotation_use_rect_tilt', True)
+        self.declare_parameter('kernel_rotation_k', 0.35)
+        self.declare_parameter('kernel_rotation_max_step_deg', 3.0)
+        self.declare_parameter('kernel_rotation_deadband_deg', 0.5)
+        self.declare_parameter('kernel_rotation_rect_sign', 1.0)
         self.declare_parameter('vps_pose_variance_base_m2', 4.0)
         self.declare_parameter('max_keypoints', 1024)
         self.declare_parameter('enable_gpu', True)
@@ -97,6 +118,9 @@ class NGPSLocalizationNode(Node):
         self.declare_parameter('debug_match_pair_topic', 'ngps/match_pair')
         self.declare_parameter('publish_ap_dds_tf', False)
         self.declare_parameter('ap_dds_tf_topic', '/ap/tf')
+        self.declare_parameter('dds_tf_use_ap_time', True)
+        self.declare_parameter('dds_tf_use_unix_wall_time', False)
+        self.declare_parameter('ap_time_topic', '/ap/time')
 
         max_keypoints = int(self.get_parameter('max_keypoints').get_parameter_value().integer_value)
         enable_gpu = self.get_parameter('enable_gpu').get_parameter_value().bool_value
@@ -154,13 +178,51 @@ class NGPSLocalizationNode(Node):
         self.odom_vps_pub = self.create_publisher(Odometry, 'odometry/vps', 10)
 
         self._ap_dds_tf_pub = None
+        self._dds_tf_hist_x = None
+        self._dds_tf_use_ap_time = False
+        self._dds_tf_use_unix_wall_time = False
+        self._ap_time_stamp_for_tf: Optional[BuiltinTime] = None
         if self.get_parameter('publish_ap_dds_tf').get_parameter_value().bool_value:
             ap_tf_topic = self.get_parameter('ap_dds_tf_topic').get_parameter_value().string_value
             self._ap_dds_tf_pub = self.create_publisher(
                 TFMessage, ap_tf_topic, QoSPresetProfiles.SENSOR_DATA.value
             )
+            self._dds_tf_hist_x = deque(maxlen=5)
+            self._dds_tf_hist_y = deque(maxlen=5)
+            self._dds_tf_hist_z = deque(maxlen=5)
+            self._dds_tf_hist_yaw_deg = deque(maxlen=5)
+            self._dds_tf_use_unix_wall_time = (
+                self.get_parameter('dds_tf_use_unix_wall_time').get_parameter_value().bool_value
+            )
+            self._dds_tf_use_ap_time = (
+                self.get_parameter('dds_tf_use_ap_time').get_parameter_value().bool_value
+            )
+            if self._dds_tf_use_unix_wall_time and self._dds_tf_use_ap_time:
+                self.get_logger().warn(
+                    'dds_tf_use_unix_wall_time is true: ignoring dds_tf_use_ap_time '
+                    '(/ap/time not used for /ap/tf stamp)'
+                )
+            if self._dds_tf_use_ap_time and not self._dds_tf_use_unix_wall_time:
+                ap_time_topic = (
+                    self.get_parameter('ap_time_topic').get_parameter_value().string_value
+                )
+                self.create_subscription(
+                    BuiltinTime,
+                    ap_time_topic,
+                    self._ap_time_for_tf_callback,
+                    QoSPresetProfiles.SENSOR_DATA.value,
+                )
+                self.get_logger().info(
+                    f'ArduPilot DDS: TF header stamp from {ap_time_topic} when available '
+                    '(else ROS node clock)'
+                )
+            elif self._dds_tf_use_unix_wall_time:
+                self.get_logger().info(
+                    'ArduPilot DDS: TF header stamp from host Unix wall clock (time.time_ns)'
+                )
             self.get_logger().info(
-                f'ArduPilot DDS: publishing {ap_tf_topic} '
+                f'ArduPilot DDS: publishing {ap_tf_topic} as tf2_msgs/TFMessage '
+                '(odom to base_link, median window 5; requires AP visual odometry / DDS enabled)'
             )
 
         image_qos = QoSPresetProfiles.SENSOR_DATA.value
@@ -533,7 +595,6 @@ class NGPSLocalizationNode(Node):
         self,
         center_row: int,
         center_col: int,
-        rot: float,
         out_h: int,
         out_w: int,
     ) -> Tuple[np.ndarray, float, float]:
@@ -561,7 +622,9 @@ class NGPSLocalizationNode(Node):
         center_row = int(np.clip(center_row, min_row, max_row))
         center_col = int(np.clip(center_col, min_col, max_col))
 
-        self.tot_rot = float(rot)
+        step = float(self._pending_kernel_rot_step_deg)
+        self.tot_rot += step
+        self._pending_kernel_rot_step_deg = 0.0
         rot_mat = cv.getRotationMatrix2D((int(center_col), int(center_row)), self.tot_rot, 1.0)
         mosaic = cv.warpAffine(self.mosaic_bgr, rot_mat, (self.w, self.h))
 
@@ -613,8 +676,44 @@ class NGPSLocalizationNode(Node):
 
         return theta_deg
 
+    @staticmethod
+    def _rect_tilt_deg_from_dst(dst: np.ndarray) -> float:
+        """Tilt of camera footprint quad in kernel image coords (minAreaRect), ~(-45, 45] deg."""
+        pts = np.int32(dst.reshape(-1, 2))
+        rect = cv.minAreaRect(pts)
+        theta_deg = float(rect[2])
+        if theta_deg < -45.0:
+            theta_deg = 90.0 + theta_deg
+        if theta_deg > 45.0:
+            theta_deg = -90.0 + theta_deg
+        return theta_deg
+
+    def _kernel_rotation_step_from_dst(self, dst: np.ndarray, theta_hom: float) -> float:
+        k = float(self.get_parameter('kernel_rotation_k').get_parameter_value().double_value)
+        mx = float(self.get_parameter('kernel_rotation_max_step_deg').get_parameter_value().double_value)
+        dead = float(self.get_parameter('kernel_rotation_deadband_deg').get_parameter_value().double_value)
+        sg = float(self.get_parameter('kernel_rotation_rect_sign').get_parameter_value().double_value)
+        k = max(0.0, k)
+        mx = max(0.0, mx)
+
+        if self.get_parameter('kernel_rotation_use_rect_tilt').get_parameter_value().bool_value:
+            tilt = self._rect_tilt_deg_from_dst(dst)
+            if abs(tilt) < dead:
+                return 0.0
+            step_mag = min(abs(tilt) * k, mx)
+            return float(np.copysign(step_mag, tilt) * sg)
+
+        if abs(theta_hom) < dead:
+            return 0.0
+        step_mag = min(abs(theta_hom) * k, mx)
+        return float(np.copysign(step_mag, theta_hom) * sg)
+
     def _angle_delta_deg(self, a: float, b: float) -> float:
         return (a - b + 180.0) % 360.0 - 180.0
+
+    @staticmethod
+    def _wrap_deg180(deg: float) -> float:
+        return (float(deg) + 180.0) % 360.0 - 180.0
 
     def validate_rotation(self, theta_deg):
         if not self.get_parameter('enable_rotation_validation').get_parameter_value().bool_value:
@@ -664,6 +763,17 @@ class NGPSLocalizationNode(Node):
     def _cv_bgr_from_compressed_msg(self, msg: CompressedImage) -> np.ndarray:
         return self.bridge.compressed_imgmsg_to_cv2(msg, 'bgr8')
 
+    def _ap_time_for_tf_callback(self, msg: BuiltinTime) -> None:
+        self._ap_time_stamp_for_tf = msg
+
+    @staticmethod
+    def _builtin_time_from_unix_now() -> BuiltinTime:
+        ns = time.time_ns()
+        out = BuiltinTime()
+        out.sec = int(ns // 1_000_000_000)
+        out.nanosec = int(ns % 1_000_000_000)
+        return out
+
     def compressed_image_callback(self, msg: CompressedImage) -> None:
         try:
             self._process_localization_frame(self._cv_bgr_from_compressed_msg(msg))
@@ -686,7 +796,6 @@ class NGPSLocalizationNode(Node):
             img_kl, kernel_scale_row, kernel_scale_col = self.kernel_show(
                 int(self.base_x),
                 int(self.base_y),
-                self.theta_deg,
                 hh,
                 ww,
             )
@@ -754,25 +863,64 @@ class NGPSLocalizationNode(Node):
             self._last_mean_score = mean_score
             self._last_inlier_ratio = inlier_ratio
 
+            min_ir = float(self.get_parameter('min_frame_inlier_ratio').get_parameter_value().double_value)
+            if min_ir > 0.0 and inlier_ratio < min_ir:
+                self.get_logger().debug(
+                    f'skip frame: inlier_ratio={inlier_ratio:.3f} < min_frame_inlier_ratio={min_ir:.3f}'
+                )
+                self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
+                return
+
             pts = np.float32([[0, 0], [ww, 0], [ww, hh], [0, hh]]).reshape(-1, 1, 2)
             dst = cv.perspectiveTransform(pts, M)
+            if self.get_parameter('reject_degenerate_homography').get_parameter_value().bool_value:
+                ref_a = float(max(1, ww * hh))
+                q_area = abs(cv.contourArea(dst.reshape(-1, 2).astype(np.float32)))
+                ar = q_area / ref_a
+                if ar < 0.12 or ar > 6.0:
+                    self.get_logger().debug(
+                        f'skip frame: homography area ratio {ar:.3f} (expected ~1 for similarity)'
+                    )
+                    self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
+                    return
             self._maybe_grow_kernel_size(dst, ww, hh)
             self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
 
             theta_hom = self.calculate_rotation_from_homography(M)
             if abs(theta_hom) >= 180:
+                self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
                 return
 
-            theta_deg = self.validate_rotation(theta_hom)
-            theta_deg = self.smooth_rotation(theta_deg)
-            self.theta_deg = theta_deg
-
-            if abs(theta_deg) > 50:
-                self.get_logger().debug(f'large rotation: {theta_deg:.1f} deg')
+            rect_tilt = self._rect_tilt_deg_from_dst(dst)
+            if abs(rect_tilt) > 75.0:
+                self.get_logger().debug(f'skip frame: rect tilt {rect_tilt:.1f} deg out of range')
+                self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
+                return
 
             x, y = np.mean(dst, axis=0).astype(int)[0]
-            self.x = int(round((x - (ww * 0.5)) * kernel_scale_col))
-            self.y = int(round((y - (hh * 0.5)) * kernel_scale_row))
+            x_new = int(round((x - (ww * 0.5)) * kernel_scale_col))
+            y_new = int(round((y - (hh * 0.5)) * kernel_scale_row))
+            max_step = float(self.get_parameter('max_kernel_translation_step_px').get_parameter_value().double_value)
+            if max_step > 0.0 and self._prev_kernel_xy is not None:
+                step = math.hypot(x_new - self._prev_kernel_xy[0], y_new - self._prev_kernel_xy[1])
+                if step > max_step:
+                    self.get_logger().debug(
+                        f'skip frame: kernel translation step {step:.1f}px > max_kernel_translation_step_px={max_step:.1f}'
+                    )
+                    self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
+                    return
+
+            theta_pose = self.validate_rotation(theta_hom)
+            theta_pose = self.smooth_rotation(theta_pose)
+
+            if abs(theta_pose) > 50:
+                self.get_logger().debug(f'large homography rotation: {theta_pose:.1f} deg')
+
+            self.theta_deg = float(theta_pose)
+            self._pending_kernel_rot_step_deg = self._kernel_rotation_step_from_dst(dst, theta_hom)
+            self.x = x_new
+            self.y = y_new
+            self._prev_kernel_xy = (float(self.x), float(self.y))
 
             self.publish_results()
 
@@ -796,8 +944,9 @@ class NGPSLocalizationNode(Node):
         pose_msg.pose.position.x = lx
         pose_msg.pose.position.y = ly
         pose_msg.pose.position.z = self._published_altitude_m()
-        pose_msg.pose.orientation.z = np.sin(np.radians(self.theta_deg) / 2.0)
-        pose_msg.pose.orientation.w = np.cos(np.radians(self.theta_deg) / 2.0)
+        yaw_pub = self._wrap_deg180(self.theta_deg)
+        pose_msg.pose.orientation.z = np.sin(np.radians(yaw_pub) / 2.0)
+        pose_msg.pose.orientation.w = np.cos(np.radians(yaw_pub) / 2.0)
         self.pose_pub.publish(pose_msg)
 
         enable_global = self.get_parameter('enable_global_coordinates').get_parameter_value().bool_value
@@ -813,7 +962,7 @@ class NGPSLocalizationNode(Node):
         self.position_pub.publish(position_msg)
         
         rotation_msg = Float64()
-        rotation_msg.data = self.theta_deg
+        rotation_msg.data = float(yaw_pub)
         self.rotation_pub.publish(rotation_msg)
 
         if not self._first_vps_odom_published and not self._passes_first_fix_gate():
@@ -847,16 +996,31 @@ class NGPSLocalizationNode(Node):
         odom.pose.covariance[28] = 1e6
         odom.pose.covariance[35] = 1e6
         self.odom_vps_pub.publish(odom)
-        if self._ap_dds_tf_pub is not None:
-            zs = float(np.sin(np.radians(self.theta_deg) / 2.0))
-            wc = float(np.cos(np.radians(self.theta_deg) / 2.0))
+        if self._ap_dds_tf_pub is not None and self._dds_tf_hist_x is not None:
+            alt_z = float(self._published_altitude_m())
+            self._dds_tf_hist_x.append(float(lx))
+            self._dds_tf_hist_y.append(float(ly))
+            self._dds_tf_hist_z.append(alt_z)
+            self._dds_tf_hist_yaw_deg.append(float(yaw_pub))
+            mx = float(np.median(self._dds_tf_hist_x))
+            my = float(np.median(self._dds_tf_hist_y))
+            mz = float(np.median(self._dds_tf_hist_z))
+            myaw = float(np.median(self._dds_tf_hist_yaw_deg))
+            zs = float(np.sin(np.radians(myaw) / 2.0))
+            wc = float(np.cos(np.radians(myaw) / 2.0))
             ts = TransformStamped()
-            ts.header.stamp = current_time
+            if self._dds_tf_use_unix_wall_time:
+                tf_stamp = self._builtin_time_from_unix_now()
+            elif self._dds_tf_use_ap_time and self._ap_time_stamp_for_tf is not None:
+                tf_stamp = self._ap_time_stamp_for_tf
+            else:
+                tf_stamp = current_time
+            ts.header.stamp = tf_stamp
             ts.header.frame_id = 'odom'
             ts.child_frame_id = 'base_link'
-            ts.transform.translation.x = float(lx)
-            ts.transform.translation.y = float(ly)
-            ts.transform.translation.z = float(self._published_altitude_m())
+            ts.transform.translation.x = my
+            ts.transform.translation.y = -mx
+            ts.transform.translation.z = mz
             ts.transform.rotation.x = 0.0
             ts.transform.rotation.y = 0.0
             ts.transform.rotation.z = zs
