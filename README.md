@@ -256,7 +256,7 @@ ros2 run micro_ros_agent micro_ros_agent udp4 -p 2019
 Then in another terminal, **after GPS is detected in sitl**, run:
 
 ```bash
-python3 ./Tools/autotest/sat_cam_emulator.py --port 14550 --airfield-radius-m 1500 --airfield-zoom 20  --http-mjpeg-port 8090 --no-hud --ros --no-display --ros-compressed --ros-size 640x360
+python3 ./Tools/autotest/sat_cam_emulator.py --port 14550 --airfield-radius-m 1500 --airfield-zoom 20  --http-mjpeg-port 8090 --no-hud --ros --no-display --ros-compressed --ros-size 640x360 --pose-source sim
 ```
 
 > If want to record bag file:
