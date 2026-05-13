@@ -13,6 +13,14 @@ ngps_localization_node:
     initial_base_y: 5383
     match_threshold: 0.5
     min_matches: 20
+    min_frame_inlier_ratio: 0.22
+    max_kernel_translation_step_px: 120.0
+    reject_degenerate_homography: true
+    kernel_rotation_use_rect_tilt: true
+    kernel_rotation_k: 0.35
+    kernel_rotation_max_step_deg: 3.0
+    kernel_rotation_deadband_deg: 0.5
+    kernel_rotation_rect_sign: 1.0
     max_rotation_change: 30.0
     rotation_std_threshold: 15.0
     max_rotation_history: 10
@@ -26,6 +34,11 @@ ngps_localization_node:
 
     publish_ap_dds_tf: true
     ap_dds_tf_topic: "/ap/tf"
+    # /ap/tf stamp: host Unix wall clock (time.time_ns). If false, see dds_tf_use_ap_time.
+    dds_tf_use_unix_wall_time: true
+
+    dds_tf_use_ap_time: false
+    ap_time_topic: "/ap/time"
 
     reference_min_lon: -122.08709739032994
     reference_min_lat: 37.39480300691434
