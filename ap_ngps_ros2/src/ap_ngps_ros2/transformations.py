@@ -1,20 +1,20 @@
 from typing import Tuple
+
 import numpy as np
-from pyproj import Proj, transform
+from pyproj import Transformer
+
+_WGS84_TO_ECEF = Transformer.from_crs('EPSG:4326', 'EPSG:4978', always_xy=True)
+_ECEF_TO_WGS84 = Transformer.from_crs('EPSG:4978', 'EPSG:4326', always_xy=True)
 
 
 def wgs84_to_ecef(lon: float, lat: float, alt: float) -> Tuple[float, float, float]:
-    proj_wgs84 = Proj(proj="latlong", datum="WGS84")
-    proj_ecef = Proj(proj="geocent", datum="WGS84")
-    x, y, z = transform(proj_wgs84, proj_ecef, lon, lat, alt, radians=False)
-    return x, y, z
+    x, y, z = _WGS84_TO_ECEF.transform(lon, lat, alt)
+    return float(x), float(y), float(z)
 
 
 def ecef_to_wgs84(x: float, y: float, z: float) -> Tuple[float, float, float]:
-    proj_wgs84 = Proj(proj="latlong", datum="WGS84")
-    proj_ecef = Proj(proj="geocent", datum="WGS84")
-    lon, lat, alt = transform(proj_ecef, proj_wgs84, x, y, z, radians=False)
-    return lon, lat, alt
+    lon, lat, alt = _ECEF_TO_WGS84.transform(x, y, z)
+    return float(lon), float(lat), float(alt)
 
 
 def enu_to_ecef_matrix(lon: float, lat: float) -> np.ndarray:

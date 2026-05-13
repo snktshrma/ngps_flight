@@ -24,7 +24,6 @@ install(PROGRAMS
   src/ap_ngps_ros2/ngps_localization_node.py
   src/ap_ngps_ros2/vio_origin_relay.py
   src/ap_ngps_ros2/pose_assembly_node.py
-  src/ap_ngps_ros2/mjpeg_sat_cam_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -39,6 +38,11 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}/
 )
+
+set(_NGPS_TIFF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ngps_config/tiff")
+if(IS_DIRECTORY "${_NGPS_TIFF_DIR}")
+  install(DIRECTORY "${_NGPS_TIFF_DIR}" DESTINATION share/${PROJECT_NAME}/ngps_config)
+endif()
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

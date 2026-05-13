@@ -1,12 +1,3 @@
-# robot_localization ekf_node — NGPS stack (VIO + VPS)
-# Install: sudo apt install ros-${ROS_DISTRO}-robot-localization
-#
-# odom0: VINS after vio_origin_relay (/odometry/vio)
-# odom1: NGPS VPS (/odometry/vps) — horizontal position only
-#
-# Tune process_noise_covariance / measurement covariances on real flights.
-# This is not a drop-in for ap_ukf soft-VPS behavior; it is standard EKF fusion.
-
 ekf_filter_node:
   ros__parameters:
     frequency: 30.0

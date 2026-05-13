@@ -1,29 +1,43 @@
 ngps_localization_node:
   ros__parameters:
-    reference_image_path: ""
-    camera_topic: "/camera/image_raw"
-    kernel_size: 300
+    reference_image_path: "/home/sanket/ngps_ws/src/ngps_flight/ngps_config/tiff/osrf0/osrf.tif"
+    reference_max_edge: 4096
+    # camera_topic: "/camera/image_raw"
+    camera_topic: "/camera/image_raw/compressed"
+    camera_compressed: true
+    kernel_size: 900
+    kernel_max_size: 3000
+    kernel_grow_fill_ratio: 0.85
+    kernel_grow_factor: 1.25
+    initial_base_x: 5484
+    initial_base_y: 5383
     match_threshold: 0.5
     min_matches: 20
-    initial_base_x: 1024
-    initial_base_y: 712
     max_rotation_change: 30.0
     rotation_std_threshold: 15.0
     max_rotation_history: 10
     enable_rotation_smoothing: true
     enable_rotation_validation: true
     frame_id: "map"
-    publish_debug_images: true
-    debug_image_topic: "/ngps/debug_image"
+    publish_match_pair: true
+    debug_match_pair_topic: "ngps/match_pair"
     enable_gpu: true
-    max_keypoints: 2048
-    
-    reference_min_lon: 0.0
-    reference_min_lat: 0.0
-    reference_max_lon: 0.0
-    reference_max_lat: 0.0
+    max_keypoints: 1024
+
+    publish_ap_dds_tf: true
+    ap_dds_tf_topic: "/ap/tf"
+
+    reference_min_lon: -122.08709739032994
+    reference_min_lat: 37.39480300691434
+    reference_max_lon: -122.07302115741979
+    reference_max_lat: 37.40598520512967
     reference_altitude: 0.0
-    enable_global_coordinates: false
+    altitude_topic: "/ap/geopose/filtered"
+    altitude_source: "geopose"
+    default_altitude_m: 10.0
+    mosaic_meters_per_pixel: 0.0
+    mosaic_meters_per_pixel_source_full_res: true
+    enable_global_coordinates: true
     pixel_utm_map_path: ""
     first_fix_min_matches: 45
     first_fix_min_mean_score: 0.48

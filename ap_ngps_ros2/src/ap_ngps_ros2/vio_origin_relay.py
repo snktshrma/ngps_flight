@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Subtract VIO position at first VPS fix so local frame matches SYSTEM_PLAN (shared origin).
+"""Subtract VIO position at first VPS fix.
 
 First VPS message should already pass NGPS first-fix gating. Optional origin_max_pose_variance_xy
 defers alignment if pose covariance is unexpectedly large.

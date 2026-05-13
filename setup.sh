@@ -44,6 +44,9 @@ rosdep update
 source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 
+echo "Installing NGPS LightGlue / PyTorch Python stack..."
+bash ~/ngps_ws/src/ngps_flight/ap_ngps_ros2/install_dependencies.sh
+
 echo "Building workspace..."
 source ~/.bashrc
 colcon build --packages-up-to ardupilot_gz_bringup

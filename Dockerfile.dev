@@ -2,6 +2,8 @@
 FROM osrf/ros:humble-desktop
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NGPS_INSTALL_TORCH=yes
+ENV NGPS_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
 
 RUN apt-get update && apt-get install -y \
     ros-humble-mavros \
@@ -9,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-image-transport \
     ros-humble-cv-bridge \
     ros-humble-vision-opencv \
+    ros-humble-geographic-msgs \
     libopencv-dev \
     libeigen3-dev \
     libboost-all-dev \
@@ -16,13 +19,15 @@ RUN apt-get update && apt-get install -y \
     libceres-dev \
     python3-colcon-common-extensions \
     python3-rosdep \
-    git cmake build-essential \
+    python3-pip \
+    python3-dev \
+    git \
+    cmake build-essential \
     curl lsb-release gnupg \
     python3-vcstool \
     default-jre \
     wget \
     gitk \
-    
     && rm -rf /var/lib/apt/lists/*
 
 # GeographicLib for MAVROS
@@ -40,6 +45,11 @@ RUN curl https://packages.osrfoundation.org/gazebo.gpg \
     && apt-get install -y gz-harmonic \
     && rm -rf /var/lib/apt/lists/*
 
+COPY ap_ngps_ros2/requirements.txt /opt/ngps/requirements.txt
+COPY ap_ngps_ros2/install_dependencies.sh /opt/ngps/install_dependencies.sh
+RUN chmod +x /opt/ngps/install_dependencies.sh \
+    && NGPS_REQUIREMENTS_FILE=/opt/ngps/requirements.txt /opt/ngps/install_dependencies.sh
+
 ARG USERNAME=dev
 ARG USER_UID=1000
 RUN useradd -m -u $USER_UID -s /bin/bash dev \
@@ -48,7 +58,7 @@ RUN useradd -m -u $USER_UID -s /bin/bash dev \
 USER $USERNAME
 
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc \
-    && echo "source ~/ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc
+    && echo "source ~/ngps_ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc
 
 WORKDIR /home/$USERNAME/ngps_ws
 CMD ["/bin/bash"]

@@ -2,3 +2,4 @@ mav*
 terrain/
 __pycache__/
 eeprom.bin
+**/__pycache__/

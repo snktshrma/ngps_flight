@@ -8,28 +8,20 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    ref_img_arg = DeclareLaunchArgument(
-        'reference_image_path',
-        default_value='',
-        description='Path to the reference image for localization'
-    )
-    
-    cam_topic_arg = DeclareLaunchArgument(
-        'camera_topic',
-        default_value='/camera/image_raw',
-        description='Camera topic to subscribe to'
-    )
-    
     config_arg = DeclareLaunchArgument(
         'config_file',
         default_value=PathJoinSubstitution([
             FindPackageShare('ap_ngps_ros2'),
             'config',
-            'ngps_config.yaml'
+            'ngps_config.yaml',
         ]),
-        description='Path to the configuration file'
+        description='Path to the NGPS configuration file',
     )
-    
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation time',
+    )
     ngps_node = Node(
         package='ap_ngps_ros2',
         executable='ngps_localization_node.py',
@@ -37,19 +29,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             LaunchConfiguration('config_file'),
-            {
-                'reference_image_path': LaunchConfiguration('reference_image_path'),
-                'camera_topic': LaunchConfiguration('camera_topic'),
-            }
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
         ],
-        remappings=[
-            ('/camera/image_raw', LaunchConfiguration('camera_topic')),
-        ]
     )
-    
-    return LaunchDescription([
-        ref_img_arg,
-        cam_topic_arg,
-        config_arg,
-        ngps_node,
-    ])
+    return LaunchDescription([config_arg, use_sim_time_arg, ngps_node])

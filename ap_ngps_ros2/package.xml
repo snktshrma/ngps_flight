@@ -4,7 +4,7 @@
   <name>ap_ngps_ros2</name>
   <version>0.0.0</version>
   <description>NGPS Localization using LightGlue for ROS2</description>
-  <maintainer email="user@example.com">user</maintainer>
+  <maintainer email="sharma.sanket272@gmail.com">Sanket Sharma</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -15,6 +15,9 @@
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>tf2_msgs</depend>
+  <depend>geographic_msgs</depend>
+  <exec_depend>ament_index_python</exec_depend>
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>
 
