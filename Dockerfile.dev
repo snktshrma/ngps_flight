@@ -1,18 +1,26 @@
-# Dockerfile.dev
-FROM osrf/ros:humble-desktop
+# Dockerfile.jetson
+# JetPack 6.1 | L4T R36.4.x | CUDA 12.6 | ROS 2 Humble | Orin NX
+ARG L4T_VERSION=r36.4.0
+FROM dustynv/ros:humble-desktop-l4t-r36.4.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NGPS_INSTALL_TORCH=yes
-ENV NGPS_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121
+# JP6.1 + CUDA 12.6 — use --find-links (not --index-url) in install_dependencies.sh
+ENV NGPS_TORCH_INDEX_URL=https://pypi.jetson-ai-lab.io/jp6/cu126
 
-RUN apt-get update && apt-get install -y \
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+    http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+    | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+    
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-launch \
+    ros-humble-launch-ros \
+    ros-humble-ros2launch \
     ros-humble-mavros \
     ros-humble-mavros-extras \
-    ros-humble-image-transport \
-    ros-humble-cv-bridge \
-    ros-humble-vision-opencv \
     ros-humble-geographic-msgs \
-    libopencv-dev \
     libeigen3-dev \
     libboost-all-dev \
     libyaml-cpp-dev \
@@ -30,12 +38,7 @@ RUN apt-get update && apt-get install -y \
     gitk \
     && rm -rf /var/lib/apt/lists/*
 
-# GeographicLib for MAVROS
-RUN wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
-    && bash install_geographiclib_datasets.sh \
-    && rm install_geographiclib_datasets.sh
-
-# Gazebo Harmonic
+# Gazebo Harmonic — OSRF publishes arm64 debs
 RUN curl https://packages.osrfoundation.org/gazebo.gpg \
     --output /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] \
@@ -45,10 +48,31 @@ RUN curl https://packages.osrfoundation.org/gazebo.gpg \
     && apt-get install -y gz-harmonic \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get install libgz-sim8-dev rapidjson-dev 
+RUN pip3 install --no-cache-dir nvidia-cudss-cu12==0.4.0.2 --index-url https://pypi.org/simple \
+    && cp $(find /usr/local/lib/python3.10/dist-packages/ -name "libcudss.so.0" | head -n 1) /usr/lib/aarch64-linux-gnu/ \
+    && pip3 uninstall -y nvidia-cudss-cu12 nvidia-cublas-cu12 nvidia-cuda-nvrtc-cu12
+
+RUN echo "" >> /var/lib/dpkg/status && \
+    echo "Package: libopencv-dev" >> /var/lib/dpkg/status && \
+    echo "Status: install ok installed" >> /var/lib/dpkg/status && \
+    echo "Priority: optional" >> /var/lib/dpkg/status && \
+    echo "Section: devel" >> /var/lib/dpkg/status && \
+    echo "Installed-Size: 1" >> /var/lib/dpkg/status && \
+    echo "Architecture: arm64" >> /var/lib/dpkg/status && \
+    echo "Version: 4.5.4+dfsg-9ubuntu4" >> /var/lib/dpkg/status && \
+    echo "Provides: libopencv-core-dev, libopencv-imgproc-dev, libopencv-imgcodecs-dev, libopencv-videoio-dev, libopencv-highgui-dev, libopencv-ml-dev, libopencv-features2d-dev, libopencv-calib3d-dev, libopencv-dnn-dev, libopencv-objdetect-dev, libopencv-photo-dev, libopencv-video-dev, libopencv-shape-dev, libopencv-stitching-dev, libopencv-superres-dev, libopencv-videostab-dev, libopencv-contrib-dev" >> /var/lib/dpkg/status && \
+    echo "Description: Dummy entry to intercept upstream Ubuntu packages and protect hardware-accelerated Jetson OpenCV" >> /var/lib/dpkg/status
+    
 COPY ap_ngps_ros2/requirements.txt /opt/ngps/requirements.txt
 COPY ap_ngps_ros2/install_dependencies.sh /opt/ngps/install_dependencies.sh
 RUN chmod +x /opt/ngps/install_dependencies.sh \
     && NGPS_REQUIREMENTS_FILE=/opt/ngps/requirements.txt /opt/ngps/install_dependencies.sh
+    
+# GeographicLib for MAVROS
+RUN wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
+    && bash install_geographiclib_datasets.sh \
+    && rm install_geographiclib_datasets.sh
 
 ARG USERNAME=dev
 ARG USER_UID=1000
@@ -56,7 +80,6 @@ RUN useradd -m -u $USER_UID -s /bin/bash dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 USER $USERNAME
-
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc \
     && echo "source ~/ngps_ws/install/setup.bash 2>/dev/null || true" >> ~/.bashrc
 

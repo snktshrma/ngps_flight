@@ -96,7 +96,7 @@ sudo systemctl restart docker
 ```bash
 mkdir -p ~/ngps_ws/src
 cd ~/ngps_ws/src
-git clone git@github.com:snktshrma/ngps_flight.git
+git clone https://github.com/snktshrma/ngps_flight.git -b dev/arm64
 ```
 
 **Step 4: Docker image**
@@ -104,21 +104,23 @@ git clone git@github.com:snktshrma/ngps_flight.git
 Pull a prebuilt dev image:
 
 ```bash
-docker pull snktshrma/ngps-vps-dev:latest
+docker pull snktshrma/ngps-vps-dev-arm:latest
 ```
 
 Or build locally:
 
 ```bash
 cd ~/ngps_ws/src/ngps_flight
-docker build -f Dockerfile.dev -t vps-dev:latest .
+docker build --network=host --platform linux/arm64 --build-arg L4T_VERSION=r36.4.0 -f Dockerfile.dev -t vps-dev:latest .
 ```
 
-Use `snktshrma/ngps-vps-dev:latest` in the commands below, or `vps-dev:latest` if built locally.
+Use `snktshrma/ngps-vps-dev-arm:latest` in the commands below, or `vps-dev:latest` if built locally.
 
 > **Docker only:** Skip **Steps 5–6**.
 >
 > With NVIDIA GPU (requires **Step 2**):
+>
+> Set --runtime nvidia flag instead of --gpus all as Jetson uses integrated GPU instead of discrete graphics card.
 >
 > ```bash
 > docker run -it \
@@ -126,11 +128,11 @@ Use `snktshrma/ngps-vps-dev:latest` in the commands below, or `vps-dev:latest` i
 >   --network host \
 >   --privileged \
 >   --ipc host \
->   --gpus all \
+>   --runtime nvidia \
 >   -v ~/ngps_ws:/home/dev/ngps_ws \
 >   -e DISPLAY=$DISPLAY \
 >   -v /tmp/.X11-unix:/tmp/.X11-unix \
->   snktshrma/ngps-vps-dev:latest
+>   vps-dev:latest
 > ```
 >
 > Without NVIDIA GPU:
@@ -173,7 +175,7 @@ With NVIDIA GPU (requires **Step 2**):
 distrobox create \
   --name vps-dev \
   --image snktshrma/ngps-vps-dev:latest \
-  --additional-flags "--privileged --ipc=host --gpus all"
+  --additional-flags "--privileged --ipc=host --runtime nvidia"
 ```
 
 Without GPU:
@@ -194,6 +196,11 @@ distrobox enter vps-dev
 Inside the container:
 
 ```bash
+# To verify:
+python3 -c 'import torch, cv2, lightglue; print("ok")'
+
+# then proceed normally if it prints 'ok'
+
 bash ~/ngps_ws/src/ngps_flight/setup.sh
 # When done,
 source ~/.bashrc

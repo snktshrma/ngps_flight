@@ -7,21 +7,30 @@ echo "Setting up ngps_ws :)"
 cd ~/ngps_ws
 
 echo "Importing ros2 repos..."
-vcs import --recursive --input https://raw.githubusercontent.com/ArduPilot/ardupilot/master/Tools/ros2/ros2.repos src
+vcs import --recursive --input ~/ngps_ws/src/ngps_flight/ros2.repos src
 
 echo "Importing gazebo repos..."
 vcs import --recursive --input ~/ngps_ws/src/ngps_flight/ros2_gz.repos src
 
+echo "Installing pymavlink..."
+pip install --user pymavlink --index-url https://pypi.org/simple/
+pip install --user PyYAML mavproxy --index-url https://pypi.org/simple/
+pip3 install --user --upgrade geocoder dronecan junitparser wsproto tabulate pygame intelhex --index-url https://pypi.org/simple/
+
 echo "Installing ArduPilot prerequisites..."
 cd ~/ngps_ws/src/ardupilot
-Tools/environment_install/install-prereqs-ubuntu.sh -y
+Tools/environment_install/install-prereqs-jp6.sh -y
 source ~/.bashrc
 cd ~/ngps_ws
 
 echo "Installing MicroXRCEDDSGen..."
 sudo apt install -y default-jre
 cd ~
-git clone --recurse-submodules https://github.com/ardupilot/Micro-XRCE-DDS-Gen.git
+if [ ! -d "Micro-XRCE-DDS-Gen" ]; then
+    git clone --recurse-submodules https://github.com/ardupilot/Micro-XRCE-DDS-Gen.git
+else
+    echo "Micro-XRCE-DDS-Gen directory already exists. Skipping clone."
+fi
 cd Micro-XRCE-DDS-Gen
 ./gradlew assemble
 echo "export PATH=\$PATH:$HOME/Micro-XRCE-DDS-Gen/scripts" >> ~/.bashrc
@@ -44,13 +53,13 @@ rosdep update
 source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 
-echo "Installing NGPS LightGlue / PyTorch Python stack..."
-bash ~/ngps_ws/src/ngps_flight/ap_ngps_ros2/install_dependencies.sh
-
 echo "Building workspace..."
 source ~/.bashrc
-colcon build --packages-up-to ardupilot_gz_bringup
+MAKEFLAGS="-j2" colcon build --packages-up-to ardupilot_gz_bringup --executor sequential
 
 echo "source ~/ngps_ws/install/setup.bash" >> ~/.bashrc
 
-echo "Done! Run: source ~/.bashrc"
+sudo usermod -aG video $USER
+sudo usermod -aG render $USER || true
+
+echo "Done! Exit the Distrobox, enter again and then Run: source ~/.bashrc"

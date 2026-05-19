@@ -1,0 +1,9 @@
+repositories:
+  ardupilot:
+    type: git
+    url: https://github.com/snktshrma/ardupilot.git
+    version: dev/sat-cam
+  micro_ros_agent:
+    type: git
+    url: https://github.com/micro-ROS/micro-ROS-Agent.git
+    version: humble
