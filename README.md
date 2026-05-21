@@ -77,6 +77,28 @@ This codebase implements a visual geo-localization system for drones that matche
 
 **Step 1: Install Docker Engine**
 
+> ### For WSL2
+> Setup WSL2 for ubuntu using these instructions: [https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2](https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2) and confirm WSL version is `2`.
+>
+> All steps mentioned in README remains same. Just while setting up docker, before you run `sudo systemctl status docker` to check if docker is running, test:
+> ```bash
+> $ ps -p 1 -o comm=
+> # should show systemd enabled. Alternattively confirm:
+> ```
+>
+> ```bash
+> $ cat /etc/wsl.conf
+> # It must be:
+> [boot]
+> systemd=true
+> ```
+> If not, update contents of file to enable `systemd` on WSL.
+> 
+> - Exit WSL2
+> - wsl --shutdown
+> - wsl --update
+> - Run WSL again: `wsl --distribution Ubuntu` and confirm if it's using `systemd` this time and continue with docker instructions.
+
 - Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
 - Apply the Linux post-installation configuration as non-root user: [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
 
@@ -96,7 +118,7 @@ sudo systemctl restart docker
 ```bash
 mkdir -p ~/ngps_ws/src
 cd ~/ngps_ws/src
-git clone git@github.com:snktshrma/ngps_flight.git
+git clone https://github.com/snktshrma/ngps_flight.git
 ```
 
 **Step 4: Docker image**
