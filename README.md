@@ -44,7 +44,9 @@ This codebase implements a visual geo-localization system for drones that matche
 
 ## Demo
 
-[Algorithm Demonstration Video](https://youtu.be/iHE6cFCccTA)
+- [Drone testing Video](https://youtu.be/iHE6cFCccTA)
+
+- [SITL based sim](https://www.youtube.com/watch?v=TClQ5rftXTw)
 
 ## Related Articles & Blogs
 
@@ -77,14 +79,19 @@ This codebase implements a visual geo-localization system for drones that matche
 
 **Step 1: Install Docker Engine**
 
+- Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
+
 > ### For WSL2
 > Setup WSL2 for ubuntu using these instructions: [https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2](https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2) and confirm WSL version is `2`.
 >
-> All steps mentioned in README remains same. Just while setting up docker, before you run `sudo systemctl status docker` to check if docker is running, test:
+> Install Docker for WSL2: [https://docs.docker.com/desktop/features/wsl/](https://docs.docker.com/desktop/features/wsl/)
+>
+> Before proceeding, confirm if *systemd* is enabled in WSL2 environemnt:
 > ```bash
 > $ ps -p 1 -o comm=
-> # should show systemd enabled. Alternattively confirm:
+> # Output: should show systemd enabled.
 > ```
+> Alternatively, check `wsl.conf` and confirm it shows `systemd=true`
 >
 > ```bash
 > $ cat /etc/wsl.conf
@@ -92,19 +99,20 @@ This codebase implements a visual geo-localization system for drones that matche
 > [boot]
 > systemd=true
 > ```
-> If not, update contents of file to enable `systemd` on WSL.
+> If not, update contents of the `wsl.conf` file as shown above to enable `systemd` on WSL. Then:
 > 
 > - Exit WSL2
 > - wsl --shutdown
 > - wsl --update
-> - Run WSL again: `wsl --distribution Ubuntu` and confirm if it's using `systemd` this time and continue with docker instructions.
+> - Run WSL again: `wsl --distribution Ubuntu` and confirm if `systemd` is enabled this time.
+>
+> Continue with the next steps
 
-- Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
 - Apply the Linux post-installation configuration as non-root user: [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
 
-**Step 2: NVIDIA Container Toolkit (optional)**
+**Step 2: NVIDIA Container Toolkit**
 
-> If NVIDIA GPU is present.
+> Requires NVIDIA GPU
 - Install the toolkit: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 - Configure Docker to use the NVIDIA runtime and restart the daemon:
 
@@ -115,6 +123,8 @@ sudo systemctl restart docker
 
 **Step 3: Clone the repository**
 
+> Clone into a ROS 2 workspace layout as described below (`~/ngps_ws/src/ngps_flight`, not a bare clone anywhere else, else have to modify setup scripts):
+
 ```bash
 mkdir -p ~/ngps_ws/src
 cd ~/ngps_ws/src
@@ -123,10 +133,11 @@ git clone https://github.com/snktshrma/ngps_flight.git
 
 **Step 4: Docker image**
 
-Pull a prebuilt dev image:
+Recommended: Pull a prebuilt dev image (for distrobox, with docker as container manager):
 
 ```bash
 docker pull snktshrma/ngps-vps-dev:latest
+export NGPS_IMG="snktshrma/ngps-vps-dev:latest"
 ```
 
 Or build locally:
@@ -134,46 +145,39 @@ Or build locally:
 ```bash
 cd ~/ngps_ws/src/ngps_flight
 docker build -f Dockerfile.dev -t vps-dev:latest .
+export NGPS_IMG="vps-dev:latest"
 ```
 
-Use `snktshrma/ngps-vps-dev:latest` in the commands below, or `vps-dev:latest` if built locally.
-
-> **Docker only:** Skip **Steps 5–6**.
+> **DOCKER ONLY PATH (not recommended for development):** Skip **Steps 5–6**. Mount the host workspace at `/home/dev/ngps_ws` and set `HOME=/home/dev` so `~/ngps_ws` in `setup.sh` resolves correctly. Use `--entrypoint /bin/bash` with the prebuilt Hub image (it is distrobox-oriented).
 >
 > With NVIDIA GPU (requires **Step 2**):
 >
 > ```bash
 > docker run -it \
 >   --name vps-dev \
+>   --entrypoint /bin/bash \
 >   --network host \
 >   --privileged \
 >   --ipc host \
 >   --gpus all \
 >   -v ~/ngps_ws:/home/dev/ngps_ws \
+>   -e HOME=/home/dev \
 >   -e DISPLAY=$DISPLAY \
 >   -v /tmp/.X11-unix:/tmp/.X11-unix \
->   snktshrma/ngps-vps-dev:latest
+>   "$NGPS_IMG"
 > ```
 >
-> Without NVIDIA GPU:
->
-> ```bash
-> docker run -it \
->   --name vps-dev \
->   --network host \
->   --privileged \
->   --ipc host \
->   -v ~/ngps_ws:/home/dev/ngps_ws \
->   -e DISPLAY=$DISPLAY \
->   -v /tmp/.X11-unix:/tmp/.X11-unix \
->   snktshrma/ngps-vps-dev:latest
-> ```
->
-> To start again:
+> To start container again:
 >
 > ```bash
 > docker start vps-dev
 > docker exec -it vps-dev /bin/bash
+> ```
+>
+> Initialize the workspace (Docker only, from the host):
+>
+> ```bash
+> docker exec -it vps-dev bash -lc 'cd ~/ngps_ws/src/ngps_flight && bash setup.sh'
 > ```
 
 **Step 5: Install Distrobox**
@@ -189,25 +193,16 @@ echo "export DBX_CONTAINER_MANAGER=docker" >> ~/.bashrc
 
 **Step 6: Create the Distrobox**
 
-With NVIDIA GPU (requires **Step 2**):
-
 ```bash
 distrobox create \
   --name vps-dev \
-  --image snktshrma/ngps-vps-dev:latest \
+  --image "$NGPS_IMG" \
   --additional-flags "--privileged --ipc=host --gpus all"
 ```
 
-Without GPU:
-
-```bash
-distrobox create \
-  --name vps-dev \
-  --image snktshrma/ngps-vps-dev:latest \
-  --additional-flags "--privileged --ipc=host"
-```
-
 **Step 7: Enter and initialize the workspace**
+
+**Distrobox** (after Steps 5–6):
 
 ```bash
 distrobox enter vps-dev
@@ -222,6 +217,8 @@ source ~/.bashrc
 ```
 
 > **Distrobox:** The host user home directory is mounted; workspace paths such as `~/ngps_ws` match the host, while binaries and libraries resolve from the container image.
+>
+> **Docker only:** Run `setup.sh` as shown in Step 4, then `docker exec -it vps-dev /bin/bash` for an interactive shell.
 
 **Step 8: Verify the simulation stack**
 
