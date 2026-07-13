@@ -64,8 +64,12 @@ elif [[ "${INSTALL_TORCH}" == "cpu" ]]; then
 fi
 
 echo "Installing NGPS Python requirements from ${REQ_FILE}..."
-"${PIP[@]}" install "${PIP_FLAGS[@]}" -r "${REQ_FILE}"
-
+PIP_INDEX_URL="${NGPS_TORCH_INDEX_URL:-https://pypi.jetson-ai-lab.io/jp6/cu126}" \
+PIP_TRUSTED_HOST=pypi.jetson-ai-lab.io \
+"${PIP[@]}" install "${PIP_FLAGS[@]}" \
+    --extra-index-url https://pypi.org/simple \
+    -r "${REQ_FILE}"
+    
 echo "NGPS Python stack installed."
 python3 - <<'PY'
 import importlib

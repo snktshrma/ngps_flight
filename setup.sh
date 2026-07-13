@@ -14,14 +14,14 @@ vcs import --recursive --input ~/ngps_ws/src/ngps_flight/ros2_gz.repos src
 
 echo "Installing ArduPilot prerequisites..."
 cd ~/ngps_ws/src/ardupilot
-Tools/environment_install/install-prereqs-ubuntu.sh -y
+# Tools/environment_install/install-prereqs-ubuntu.sh -y
 source ~/.bashrc
 cd ~/ngps_ws
 
 echo "Installing MicroXRCEDDSGen..."
 sudo apt install -y default-jre
 cd ~
-git clone --recurse-submodules https://github.com/ardupilot/Micro-XRCE-DDS-Gen.git
+#git clone --recurse-submodules https://github.com/ardupilot/Micro-XRCE-DDS-Gen.git
 cd Micro-XRCE-DDS-Gen
 ./gradlew assemble
 echo "export PATH=\$PATH:$HOME/Micro-XRCE-DDS-Gen/scripts" >> ~/.bashrc
@@ -49,7 +49,8 @@ bash ~/ngps_ws/src/ngps_flight/ap_ngps_ros2/install_dependencies.sh
 
 echo "Building workspace..."
 source ~/.bashrc
-colcon build --packages-up-to ardupilot_gz_bringup
+colcon build --packages-up-to ardupilot_gz_bringup --executor sequential \
+    --parallel-workers 1 
 
 echo "source ~/ngps_ws/install/setup.bash" >> ~/.bashrc
 
