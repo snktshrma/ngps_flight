@@ -2,6 +2,8 @@
 
 NGPS localization using LightGlue for ROS2.
 
+**Jetson + TensorRT:** [Run](#tensorrt-on-jetson-recommended) · [Build engine](#build-tensorrt-engine) · [Troubleshooting](#troubleshooting)
+
 ## Features
 
 - Real-time camera image processing
@@ -128,13 +130,99 @@ To enable global coordinate extraction and publishing:
    - `/ngps/global_position` (NavSatFix): WGS84 latitude, longitude, altitude
    - `/ngps/ecef_position` (PointStamped): ECEF coordinates in meters
 
+## TensorRT on Jetson (recommended)
+
+The node loads the TensorRT engine in-process; everything runs inside the container. One-time
+setup: build the `.engine` (below), then run the three launcher steps.
+
+### Run (after engine is built)
+
+| # | Command |
+|---|---------|
+| 1 | `~/ngps_ws/src/ngps_flight/scripts/run_sitl_stack.sh` |
+| 2 | `~/ngps_ws/src/ngps_flight/scripts/run_sat_cam.sh` *(wait for GPS in SITL)* |
+| 3 | `~/ngps_ws/src/ngps_flight/scripts/run_ngps.sh` |
+
+**Check:** `ros2 topic hz /odometry/vps` and `ros2 topic echo /ngps/pose --once`.
+
+**Config** (`config/ngps_config.yaml` — defaults for 640×360 sat cam):
+
+```yaml
+inference_backend: "tensorrt"
+camera_resize_scale: 1.0
+max_keypoints: 1024
+tensorrt_engine_path: "/path/to/superpoint_lightglue_k1024_640x360_fp16.engine"
+reference_image_path: "/path/to/your/reference.tif"
+```
+
+**PyTorch fallback:** `inference_backend: pytorch` (slower; optional `camera_resize_scale: 0.6`).
+
+Launcher aliases and full stack options: [ngps_flight README](../README.md#quick-start-launcher-scripts).
+
+---
+
+## Build TensorRT engine
+
+Export with [LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX) and compile **inside the
+container** — its TensorRT matches the host, and engines only load on the version that built them.
+
+**Prerequisites:** clone `~/LightGlue-ONNX` (the home directory is shared with the container).
+
+**1. Export ONNX** (match camera size; 640×360 for sat cam):
+
+```bash
+cd ~/LightGlue-ONNX
+uv sync --group export --extra torch-cpu
+
+uv run lightglue-onnx export superpoint \
+  --num-keypoints 1024 -b 2 -h 360 -w 640 \
+  -o weights/superpoint_lightglue_k1024_640x360.onnx
+```
+
+**2. Build `.engine` on Jetson host:**
+
+```bash
+cd ~/ngps_ws/src/ngps_flight/ap_ngps_ros2
+export LIGHTGLUE_ONNX=~/LightGlue-ONNX
+export ONNX=$LIGHTGLUE_ONNX/weights/superpoint_lightglue_k1024_640x360.onnx
+export ENGINE=$PWD/weights/superpoint_lightglue_k1024_640x360_fp16.engine
+./scripts/build_tensorrt_engine.sh
+```
+
+**3. Smoke test (no ROS):**
+
+```bash
+source scripts/trt_env.sh
+python3 scripts/test_trt_matcher.py \
+  --engine weights/superpoint_lightglue_k1024_640x360_fp16.engine \
+  --width 640 --height 360
+```
+
+Expect `matches > 0`, `latency_ms` ~80–100.
+
+**4. Set paths** in `config/ngps_config.yaml` (`tensorrt_engine_path`, `reference_image_path`).
+
+| Resolution | Export `-h` / `-w` | `camera_resize_scale` |
+|------------|-------------------|------------------------|
+| 384 × 216 | `-h 216 -w 384` | `0.6` (legacy) |
+| **640 × 360** | **`-h 360 -w 640`** | **`1.0` (sat cam)** |
+| 1280 × 720 | `-h 720 -w 1280` | `1.0` |
+
+`--num-keypoints` must match `max_keypoints` in config. Use FP32 ONNX + `trtexec --fp16` (what the build script does); do not use LightGlue-ONNX’s separate `.fp16.onnx` for TRT.
+
+---
+
 ## Troubleshooting
 
-1. **CUDA not available**: The node will automatically fall back to CPU if CUDA is not available.
-
-2. **Insufficient matches**: Adjust `match_threshold` and `min_matches` parameters.
-
-3. **Memory issues**: The node includes automatic GPU memory cleanup, but may need to reduce `max_keypoints` if running out of memory.
+| Problem | Fix |
+|---------|-----|
+| No `/odometry/vps` | TRT server running on **host**? `reference_image_path` valid? GPS in SITL before sat cam? |
+| Engine fails to deserialize | Engine was built with a different TensorRT version — rebuild it in the container |
+| `cuInit: operation not supported` | Container missing GPU groups — recreate it with the `--init-hooks` line from the [main README](../README.md) |
+| Wrong resolution / bad matches | Engine `-h`/`-w` must match effective camera size (`camera_resize_scale`) |
+| Insufficient matches | Lower `match_threshold`, check reference `.tif` covers the flight area |
+| CUDA not available (PyTorch path) | Node falls back to CPU |
+| GPU OOM | Reduce `max_keypoints` or use smaller export resolution |
 
 ## License
 

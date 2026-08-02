@@ -4,14 +4,14 @@
 
 [![WIP](https://img.shields.io/badge/status-WIP-yellow)](https://github.com/snktshrma/ngps_flight)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![ROS2](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
+[![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue)](https://docs.ros.org/en/jazzy/)
 [![ArduPilot](https://img.shields.io/badge/ArduPilot-Compatible-orange)](https://ardupilot.org/)
 <br />
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![C++](https://img.shields.io/badge/C++-17-blue?logo=c%2B%2B&logoColor=white)](https://isocpp.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-1.9+-orange?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.11-orange?logo=pytorch&logoColor=white)](https://pytorch.org/)
 <br />
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.5+-green?logo=opencv&logoColor=white)](https://opencv.org/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.11-green?logo=opencv&logoColor=white)](https://opencv.org/)
 [![LightGlue](https://img.shields.io/badge/LightGlue-SuperPoint-yellow)](https://github.com/cvg/LightGlue)
 
 </div>
@@ -33,7 +33,14 @@ This codebase implements a visual geo-localization system for drones that matche
 
   Outputs fused odometry at 10-20 Hz for flight control.
 
-- **ap_vips**: Visual-Inertial Odometry system that provides high-frequency relative pose estimates optimized for high-altitude flight.
+- **ap_vo**: Standalone monocular visual odometry (SIFT + metric `solvePnPRansac` on a plane at
+  configurable depth). Publishes `nav_msgs/Odometry` compatible with `vio_origin_relay` / `ap_ukf`.
+
+- **ap_vo2**: Standalone map-matching VPS node using classical features (AKAZE + MAGSAC
+  homography against pre-computed reference tiles). A lighter-weight alternative to the
+  LightGlue pipeline, with no dependency on other NGPS packages.
+
+> Full VIO is expected as an external package publishing relative pose; it is not bundled here.
 
 ### How It Works
 
@@ -75,14 +82,16 @@ This codebase implements a visual geo-localization system for drones that matche
 
 ## Installation
 
+Target platform: NVIDIA Jetson Orin with **JetPack 7.2** (L4T r39.x, Ubuntu 24.04, CUDA 13.2).
+The container stack is ROS 2 Jazzy + TensorRT 10.16.2 + PyTorch cu130 (`Dockerfile.jp7.dev`).
+
 **Step 1: Install Docker Engine**
 
 - Follow the official installation guide: [Install Docker Engine](https://docs.docker.com/engine/install/).
 - Apply the Linux post-installation configuration as non-root user: [Linux post-installation steps for Docker Engine](https://docs.docker.com/engine/install/linux-postinstall/).
 
-**Step 2: NVIDIA Container Toolkit (optional)**
+**Step 2: NVIDIA Container Toolkit**
 
-> If NVIDIA GPU is present.
 - Install the toolkit: [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 - Configure Docker to use the NVIDIA runtime and restart the daemon:
 
@@ -96,64 +105,46 @@ sudo systemctl restart docker
 ```bash
 mkdir -p ~/ngps_ws/src
 cd ~/ngps_ws/src
-git clone https://github.com/snktshrma/ngps_flight.git -b dev/arm64
+git clone https://github.com/snktshrma/ngps_flight.git -b main_jazzy
 ```
 
-**Step 4: Docker image**
-
-Pull a prebuilt dev image:
-
-```bash
-docker pull snktshrma/ngps-vps-dev-arm:latest
-```
-
-Or build locally:
+**Step 4: Build the Docker image** (30–60 min on device)
 
 ```bash
 cd ~/ngps_ws/src/ngps_flight
-docker build --network=host --platform linux/arm64 --build-arg L4T_VERSION=r36.4.0 -f Dockerfile.dev -t vps-dev:latest .
+docker build -f Dockerfile.jp7.dev -t ngps-vps-dev-arm:jp72-cu132-jazzy-v2 .
 ```
 
-Use `snktshrma/ngps-vps-dev-arm:latest` in the commands below, or `vps-dev:latest` if built locally.
-
-> **Docker only:** Skip **Steps 5–6**.
->
-> With NVIDIA GPU (requires **Step 2**):
->
-> Set --runtime nvidia flag instead of --gpus all as Jetson uses integrated GPU instead of discrete graphics card.
+> **Docker only** (skip Steps 5–6). Distrobox is recommended — it handles the home mount and
+> display/audio passthrough — but plain Docker works and needs no `--init-hooks`, because the
+> image's user is already in the GPU groups.
 >
 > ```bash
 > docker run -it \
->   --name vps-dev \
+>   --name vps-jp7 \
 >   --network host \
->   --privileged \
 >   --ipc host \
 >   --runtime nvidia \
->   -v ~/ngps_ws:/home/dev/ngps_ws \
->   -e DISPLAY=$DISPLAY \
+>   -u $(id -u) \
+>   -v "$HOME:$HOME" -w "$HOME/ngps_ws" \
+>   -e DISPLAY="$DISPLAY" -e XAUTHORITY="$XAUTHORITY" \
 >   -v /tmp/.X11-unix:/tmp/.X11-unix \
->   vps-dev:latest
+>   --device /dev/ttyACM0 \
+>   ngps-vps-dev-arm:jp72-cu132-jazzy-v2
 > ```
 >
-> Without NVIDIA GPU:
+> Mount the home directory at the **same path** as on the host (`$HOME:$HOME`). The workspace
+> build and `ap_ngps_ros2/config/ngps_config.yaml` store absolute paths, so remapping the
+> mount point (e.g. to `/home/dev/ngps_ws`) breaks engine and reference-image lookups.
 >
-> ```bash
-> docker run -it \
->   --name vps-dev \
->   --network host \
->   --privileged \
->   --ipc host \
->   -v ~/ngps_ws:/home/dev/ngps_ws \
->   -e DISPLAY=$DISPLAY \
->   -v /tmp/.X11-unix:/tmp/.X11-unix \
->   snktshrma/ngps-vps-dev:latest
-> ```
+> Drop `--device` if no flight controller is attached. GUI apps may also need `xhost +local:`
+> on the host.
 >
 > To start again:
 >
 > ```bash
-> docker start vps-dev
-> docker exec -it vps-dev /bin/bash
+> docker start vps-jp7
+> docker exec -it -u $(id -u) -w "$HOME/ngps_ws" vps-jp7 /bin/bash
 > ```
 
 **Step 5: Install Distrobox**
@@ -169,66 +160,77 @@ echo "export DBX_CONTAINER_MANAGER=docker" >> ~/.bashrc
 
 **Step 6: Create the Distrobox**
 
-With NVIDIA GPU (requires **Step 2**):
-
 ```bash
 distrobox create \
-  --name vps-dev \
-  --image snktshrma/ngps-vps-dev:latest \
-  --additional-flags "--privileged --ipc=host --runtime nvidia"
+  --name vps-jp7 \
+  --image ngps-vps-dev-arm:jp72-cu132-jazzy-v2 \
+  --additional-flags "--runtime nvidia --ipc=host" \
+  --init-hooks "usermod -aG video,debug,render,dialout $USER 2>/dev/null || true"
 ```
 
-Without GPU:
-
-```bash
-distrobox create \
-  --name vps-dev \
-  --image snktshrma/ngps-vps-dev:latest \
-  --additional-flags "--privileged --ipc=host"
-```
-
-**Step 7: Enter and initialize the workspace**
-
-```bash
-distrobox enter vps-dev
-```
-
-Inside the container:
-
-```bash
-# To verify:
-python3 -c 'import torch, cv2, lightglue; print("ok")'
-
-# then proceed normally if it prints 'ok'
-
-bash ~/ngps_ws/src/ngps_flight/setup.sh
-# When done,
-source ~/.bashrc
-```
+> The `--init-hooks` line is required for GPU access. Distrobox replaces the image's user
+> with one matching the host, dropping its group memberships, and the Jetson GPU device
+> nodes are group-restricted — `/dev/nvgpu/igpu0/{ctxsw,dbg}` to `debug` (GID 982) and the
+> rest to `video` (44) / `render` (993). The image defines these groups at the host GIDs, so
+> the hook only needs to add the user to them. Without it CUDA fails with
+> `cuInit: operation not supported`.
 
 > **Distrobox:** The host user home directory is mounted; workspace paths such as `~/ngps_ws` match the host, while binaries and libraries resolve from the container image.
 
-**Step 8: Verify the simulation stack**
+**Step 7: Import sources and build the workspace**
 
 ```bash
-ros2 launch ardupilot_gz_bringup iris_runway.launch.py
+distrobox enter vps-jp7
 ```
 
-- Expected result: ArduPilot DDS and Gazebo Harmonic start with the runway simulation.
+Everything below runs **inside the container** — it provides `vcs`, `colcon` and the ROS
+toolchain, so nothing extra is needed on the host.
+
+```bash
+# Verify the image:
+python3 -c 'import torch, cv2, lightglue, tensorrt; print("ok", torch.cuda.is_available())'
+
+cd ~/ngps_ws
+vcs import --recursive --input src/ngps_flight/ros2.jazzy.repos src
+
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select micro_ros_msgs micro_ros_agent ardupilot_msgs ap_ngps_ros2
+```
+
+**Step 8: Build SITL with DDS** (inside the container):
+
+```bash
+cd ~/ngps_ws/src/ardupilot
+./waf configure --board sitl --enable-DDS && ./waf copter
+```
+
+**Step 9: Verify** (from the host):
+
+```bash
+~/ngps_ws/src/ngps_flight/scripts/run_sitl_stack.sh
+```
+
+`/ap/*` topics appear once MAVProxy connects to SITL:
+
+```bash
+~/ngps_ws/src/ngps_flight/scripts/_distrobox_ros.sh ros2 topic list
+```
+
+> Keep `ROS_DOMAIN_ID` unset (or match it to the `DDS_DOMAIN_ID` parameter, default 0).
 
 #### Removing or reconnecting
 
 **Distrobox:**
 
 ```bash
-distrobox stop vps-dev
-distrobox rm vps-dev
+distrobox stop vps-jp7
+distrobox rm vps-jp7
 ```
 **Docker**:
 
 ```bash
-docker stop vps-dev
-docker rm vps-dev
+docker stop vps-jp7
+docker rm vps-jp7
 ```
 
 ---
@@ -239,13 +241,65 @@ See individual package READMEs:
 
 - [ap_ngps_ros2/README.md](ap_ngps_ros2/README.md)
 - [ap_ukf/README.md](ap_ukf/README.md)
-- [ap_vips/README.md](ap_vips/README.md)
+- [ap_vo/README.md](ap_vo/README.md)
+- [ap_vo2/README.md](ap_vo2/README.md)
 
 ## Setting up environment variables
 ```bash
 export MAPBOX_API_KEY=''
 ```
-## Running the package
+
+## Quick start (launcher scripts)
+
+From the host (no need to `distrobox enter` or `source` ROS manually, scripts handle that):
+
+1. `~/ngps_ws/src/ngps_flight/scripts/run_sitl_stack.sh`
+2. `~/ngps_ws/src/ngps_flight/scripts/run_sat_cam.sh` *(after GPS in SITL)*
+3. `~/ngps_ws/src/ngps_flight/scripts/run_ngps.sh`
+
+Optional aliases (add to `~/.bashrc`):
+
+```bash
+alias ngps-sitl='~/ngps_ws/src/ngps_flight/scripts/run_sitl_stack.sh'
+alias ngps-cam='~/ngps_ws/src/ngps_flight/scripts/run_sat_cam.sh'
+alias ngps-run='~/ngps_ws/src/ngps_flight/scripts/run_ngps.sh'
+```
+
+
+Full fusion stack: `LAUNCH=unified_localization_simple.launch.py ~/ngps_ws/src/ngps_flight/scripts/run_ngps.sh`
+
+## Build TensorRT engine (one-time)
+
+Run this **inside the container** — its TensorRT matches the host exactly, and engines are
+locked to the TensorRT version that built them.
+
+Clone [LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX) (not bundled; the home
+directory is shared with the container):
+
+```bash
+git clone https://github.com/fabio-sim/LightGlue-ONNX.git ~/LightGlue-ONNX
+```
+
+Then, inside `distrobox enter vps-jp7`:
+
+```bash
+cd ~/LightGlue-ONNX
+
+# 1. Export ONNX (uses the container's torch; no uv/venv needed)
+python3 -m lightglue_dynamo.cli export superpoint --num-keypoints 1024 -b 2 -h 360 -w 640 \
+  -o weights/superpoint_lightglue_k1024_640x360.onnx
+
+# 2. Build the FP16 engine
+~/ngps_ws/src/ngps_flight/ap_ngps_ros2/scripts/build_tensorrt_engine.sh
+```
+
+Set `tensorrt_engine_path` and `reference_image_path` in `ap_ngps_ros2/config/ngps_config.yaml`.
+
+> Full copy-paste steps and options: **[ap_ngps_ros2/README.md](ap_ngps_ros2/README.md#build-tensorrt-engine)**.
+>
+> To rebuild for a different resolution, change `-h/-w` in the export and rerun both steps.
+
+## Running the package (manual steps)
 
 ### Run SITL with DDS:
 #### Terminal 1- Run micro ros agent:
@@ -256,8 +310,12 @@ ros2 run micro_ros_agent micro_ros_agent udp4 -p 2019
 
 #### Terminal 2- Run SITL with DDS:
 ```bash
-./Tools/autotest/sim_vehicle.py -v ArduCopter --enable-DDS -DG --location OSRF0
+./Tools/autotest/sim_vehicle.py -v ArduCopter --enable-DDS --location OSRF0
 ```
+
+> Add `-DG` to build with debug symbols and run under gdb. It triggers a full rebuild the
+> first time and slows the vehicle loop, so keep it off for timing-sensitive runs.
+> Via the launcher: `SITL_EXTRA_ARGS=-DG ~/ngps_ws/src/ngps_flight/scripts/run_sitl_stack.sh`
 
 
 Then in another terminal, **after GPS is detected in sitl**, run:
@@ -280,7 +338,7 @@ python3 ./Tools/autotest/sat_cam_emulator.py --port 14550 --airfield-radius-m 15
 
 #### Now to run our VPS (with bag for debugging or with SITL (with non-GPS EKF params for realtime test),
 
-Set the .tif file location in `[config file here](ngps_flight/ap_ngps_ros2/config/ngps_config.yaml)`
+Set the .tif file location in [ap_ngps_ros2/config/ngps_config.yaml](ap_ngps_ros2/config/ngps_config.yaml).
 
 ```bash
 ros2 launch ap_ngps_ros2 ngps_localization.launch.py
@@ -296,13 +354,10 @@ After changing, please change the location for sitl launch as well.
 
 ## Documentation
 
+- **[ap_ngps_ros2/README.md](ap_ngps_ros2/README.md)** — TensorRT build, config, troubleshooting
 - [Changelog](CHANGELOG.md) - Project history and version timeline
-- [Camera-IMU Calibration](CAMERA_IMU_CALIBRATION.md) - [Google Docs](https://docs.google.com/document/d/13JY4MAfdqjsa-Oa39xT4HW6WFFT-KQloymyGb0LvuGo/edit?tab=t.0#heading=h.43j03vqklwxn)
-- [Non-GPS Navigation Setup](NON_GPS_NAVIGATION.md) - [Google Docs](https://docs.google.com/document/d/1Opsji8ZT2YeRjR8lPMAb49Ai44oMDmwoFYnSJPwfXz0/edit?tab=t.0#heading=h.d9zawrpqff1s)
-
-## Special mentions
-
-Ofcourse, ~~ChatGPT~~ Gemma4 (running locally) :)
+- [Camera-IMU Calibration](docs/CAMERA_IMU_CALIBRATION.md) - [Google Docs](https://docs.google.com/document/d/13JY4MAfdqjsa-Oa39xT4HW6WFFT-KQloymyGb0LvuGo/edit?tab=t.0#heading=h.43j03vqklwxn)
+- [Non-GPS Navigation Setup](docs/NON_GPS_NAVIGATION.md) - [Google Docs](https://docs.google.com/document/d/1Opsji8ZT2YeRjR8lPMAb49Ai44oMDmwoFYnSJPwfXz0/edit?tab=t.0#heading=h.d9zawrpqff1s)
 
 ## Safety & Ethical Considerations
 

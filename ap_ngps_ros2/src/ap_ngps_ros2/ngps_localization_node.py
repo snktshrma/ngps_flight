@@ -21,9 +21,13 @@ import gc
 import json
 import math
 import os
+import threading
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ap_ngps_ros2.trt_matcher import TrtMatcher
 from collections import deque
 
 from ap_ngps_ros2 import transformations as tf_
@@ -44,6 +48,7 @@ class NGPSLocalizationNode(Node):
         self.y = 0
         self.theta_deg = 0.0
         self.frame_count = 0
+        self._frame_lock = threading.Lock()
 
         self.rot_hist = []
         self.rot_std_thresh = 15.0
@@ -114,25 +119,56 @@ class NGPSLocalizationNode(Node):
         self.declare_parameter('vps_pose_variance_base_m2', 4.0)
         self.declare_parameter('max_keypoints', 1024)
         self.declare_parameter('enable_gpu', True)
-        self.declare_parameter('publish_match_pair', True)
+        self.declare_parameter('publish_match_pair', False)
+        self.declare_parameter('publish_match_pair_every_n', 10)
         self.declare_parameter('debug_match_pair_topic', 'ngps/match_pair')
         self.declare_parameter('publish_ap_dds_tf', False)
         self.declare_parameter('ap_dds_tf_topic', '/ap/tf')
+        self.declare_parameter('dds_tf_median_window', 1)
         self.declare_parameter('dds_tf_use_ap_time', True)
         self.declare_parameter('dds_tf_use_unix_wall_time', False)
         self.declare_parameter('ap_time_topic', '/ap/time')
+        self.declare_parameter('inference_backend', 'pytorch')
+        self.declare_parameter(
+            'tensorrt_engine_path',
+            str(Path(__file__).resolve().parents[2] / 'weights' / 'superpoint_lightglue_fp16.engine'),
+        )
+        self.declare_parameter('tensorrt_warmup', True)
+        self.declare_parameter('camera_resize_scale', 1.0)
+
+        self.inference_backend = (
+            self.get_parameter('inference_backend').get_parameter_value().string_value.strip().lower()
+        )
+        self.matcher_trt: Optional['TrtMatcher'] = None
+        self.extractor = None
+        self.matcher = None
 
         max_keypoints = int(self.get_parameter('max_keypoints').get_parameter_value().integer_value)
-        enable_gpu = self.get_parameter('enable_gpu').get_parameter_value().bool_value
-        if enable_gpu and torch.cuda.is_available():
-            self.device = torch.device('cuda')
+        match_threshold = self.get_parameter('match_threshold').get_parameter_value().double_value
+
+        if self.inference_backend == 'tensorrt':
+            from ap_ngps_ros2.trt_matcher import TrtMatcher
+
+            engine_path = self.get_parameter('tensorrt_engine_path').get_parameter_value().string_value
+            warmup = self.get_parameter('tensorrt_warmup').get_parameter_value().bool_value
+            self.get_logger().info(f'Loading TensorRT engine: {engine_path}')
+            self.matcher_trt = TrtMatcher(
+                engine_path=engine_path,
+                match_threshold=match_threshold,
+                warmup=warmup,
+            )
+            self.get_logger().info('TensorRT matcher ready')
         else:
-            if enable_gpu:
-                self.get_logger().warn('enable_gpu is true but CUDA is unavailable; using CPU')
-            self.device = torch.device('cpu')
-        self.get_logger().info(f'LightGlue device: {self.device}')
-        self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().to(self.device)
-        self.matcher = LightGlue(features='superpoint').eval().to(self.device)
+            enable_gpu = self.get_parameter('enable_gpu').get_parameter_value().bool_value
+            if enable_gpu and torch.cuda.is_available():
+                self.device = torch.device('cuda')
+            else:
+                if enable_gpu:
+                    self.get_logger().warn('enable_gpu is true but CUDA is unavailable; using CPU')
+                self.device = torch.device('cpu')
+            self.get_logger().info(f'LightGlue device: {self.device}')
+            self.extractor = SuperPoint(max_num_keypoints=max_keypoints).eval().to(self.device)
+            self.matcher = LightGlue(features='superpoint').eval().to(self.device)
 
         self.load_reference_image()
         mosaic_scale = float(getattr(self, '_mosaic_load_scale', 1.0))
@@ -187,10 +223,16 @@ class NGPSLocalizationNode(Node):
             self._ap_dds_tf_pub = self.create_publisher(
                 TFMessage, ap_tf_topic, QoSPresetProfiles.SENSOR_DATA.value
             )
-            self._dds_tf_hist_x = deque(maxlen=5)
-            self._dds_tf_hist_y = deque(maxlen=5)
-            self._dds_tf_hist_z = deque(maxlen=5)
-            self._dds_tf_hist_yaw_deg = deque(maxlen=5)
+            tf_median = max(
+                1,
+                int(
+                    self.get_parameter('dds_tf_median_window').get_parameter_value().integer_value
+                ),
+            )
+            self._dds_tf_hist_x = deque(maxlen=tf_median)
+            self._dds_tf_hist_y = deque(maxlen=tf_median)
+            self._dds_tf_hist_z = deque(maxlen=tf_median)
+            self._dds_tf_hist_yaw_deg = deque(maxlen=tf_median)
             self._dds_tf_use_unix_wall_time = (
                 self.get_parameter('dds_tf_use_unix_wall_time').get_parameter_value().bool_value
             )
@@ -222,7 +264,7 @@ class NGPSLocalizationNode(Node):
                 )
             self.get_logger().info(
                 f'ArduPilot DDS: publishing {ap_tf_topic} as tf2_msgs/TFMessage '
-                '(odom to base_link, median window 5; requires AP visual odometry / DDS enabled)'
+                f'(odom to base_link, median window {tf_median}; requires AP visual odometry / DDS enabled)'
             )
 
         image_qos = QoSPresetProfiles.SENSOR_DATA.value
@@ -625,14 +667,26 @@ class NGPSLocalizationNode(Node):
         step = float(self._pending_kernel_rot_step_deg)
         self.tot_rot += step
         self._pending_kernel_rot_step_deg = 0.0
-        rot_mat = cv.getRotationMatrix2D((int(center_col), int(center_row)), self.tot_rot, 1.0)
-        mosaic = cv.warpAffine(self.mosaic_bgr, rot_mat, (self.w, self.h))
 
-        kernel_bgr = mosaic[
-            center_row - margin_row : center_row + margin_row,
-            center_col - margin_col : center_col + margin_col,
-            :,
-        ]
+        # Rotate a local patch only (not the full mosaic) for much lower CPU cost.
+        pad_row = int(math.ceil(math.hypot(crop_h, crop_w) * 0.25))
+        pad_col = pad_row
+        r0 = max(0, center_row - margin_row - pad_row)
+        r1 = min(self.h, center_row + margin_row + pad_row)
+        c0 = max(0, center_col - margin_col - pad_col)
+        c1 = min(self.w, center_col + margin_col + pad_col)
+        patch = self.mosaic_bgr[r0:r1, c0:c1]
+        ph, pw = patch.shape[:2]
+        pcx = float(center_col - c0)
+        pcy = float(center_row - r0)
+        rot_mat = cv.getRotationMatrix2D((pcx, pcy), self.tot_rot, 1.0)
+        patch_rot = cv.warpAffine(patch, rot_mat, (pw, ph), flags=cv.INTER_LINEAR)
+
+        kr0 = max(0, int(round(pcy - margin_row)))
+        kr1 = min(ph, int(round(pcy + margin_row)))
+        kc0 = max(0, int(round(pcx - margin_col)))
+        kc1 = min(pw, int(round(pcx + margin_col)))
+        kernel_bgr = patch_rot[kr0:kr1, kc0:kc1]
         if kernel_bgr.shape[0] != out_h or kernel_bgr.shape[1] != out_w:
             kernel_bgr = cv.resize(kernel_bgr, (out_w, out_h), interpolation=cv.INTER_LINEAR)
 
@@ -787,8 +841,26 @@ class NGPSLocalizationNode(Node):
             self.get_logger().warning(f'image callback: {e}')
 
     def _process_localization_frame(self, frame):
+        if not self._frame_lock.acquire(blocking=False):
+            return
         try:
-            frame = cv.resize(frame, (0, 0), fx=0.6, fy=0.6, interpolation=cv.INTER_AREA)
+            self._process_localization_frame_impl(frame)
+        finally:
+            self._frame_lock.release()
+
+    def _process_localization_frame_impl(self, frame):
+        try:
+            resize_scale = float(
+                self.get_parameter('camera_resize_scale').get_parameter_value().double_value
+            )
+            if resize_scale != 1.0:
+                frame = cv.resize(
+                    frame,
+                    (0, 0),
+                    fx=resize_scale,
+                    fy=resize_scale,
+                    interpolation=cv.INTER_AREA,
+                )
             hh, ww = frame.shape[:2]
             
             self.base_x, self.base_y = self.map_kernel_img(self.y, self.x, self.base_x, self.base_y)
@@ -800,40 +872,56 @@ class NGPSLocalizationNode(Node):
                 ww,
             )
 
-            image0 = load_image_arr(cv.cvtColor(img_kl, cv.COLOR_BGR2RGB))
-            feats0 = self.extractor.extract(image0.to(self.device))
-            
-            if frame.ndim == 3:
-                frame_tensor = frame.transpose((2, 0, 1))
-            elif frame.ndim == 2:
-                frame_tensor = frame[None]
-            
-            image1 = torch.tensor(frame_tensor / 255.0, dtype=torch.float)
-            feats1 = self.extractor.extract(image1.to(self.device))
-            
-            if self.frame_count % 23 == 0:
-                self.get_logger().debug(f'frame {self.frame_count}')
-
-            matches01 = self.matcher({"image0": feats0, "image1": feats1})
-            
-            feats0, feats1, matches01 = [rbd(x) for x in [feats0, feats1, matches01]]
-            
-            kpts0, kpts1 = feats0["keypoints"], feats1["keypoints"]
-            matches0 = matches01["matches0"]
-            scores0 = matches01["matching_scores0"]
-            
             threshold = self.get_parameter('match_threshold').get_parameter_value().double_value
-            valid = (scores0 > threshold)
-            
-            idx0 = torch.nonzero(valid).squeeze()
-            idx1 = matches0[valid]
-            
-            m_kpts0 = kpts0[idx0]
-            m_kpts1 = kpts1[idx1]
-            
-            num_matches = len(m_kpts0)
-            if self.frame_count % 10 == 0:
-                self.get_logger().debug(f'matches={num_matches}')
+
+            if self.inference_backend == 'tensorrt':
+                m_kpts0, m_kpts1, trt_stats = self.matcher_trt.match(img_kl, frame)
+                num_matches = len(m_kpts0)
+                mean_score = float(trt_stats['mean_score'])
+                if self.frame_count % 10 == 0:
+                    self.get_logger().debug(
+                        'TRT inference: matches=%d mean_score=%.2f latency_ms=%.1f'
+                        % (
+                            int(trt_stats['num_matches']),
+                            trt_stats['mean_score'],
+                            trt_stats['latency_ms'],
+                        )
+                    )
+            else:
+                image0 = load_image_arr(cv.cvtColor(img_kl, cv.COLOR_BGR2RGB))
+                feats0 = self.extractor.extract(image0.to(self.device))
+
+                if frame.ndim == 3:
+                    frame_tensor = frame.transpose((2, 0, 1))
+                elif frame.ndim == 2:
+                    frame_tensor = frame[None]
+
+                image1 = torch.tensor(frame_tensor / 255.0, dtype=torch.float)
+                feats1 = self.extractor.extract(image1.to(self.device))
+
+                if self.frame_count % 23 == 0:
+                    self.get_logger().debug(f'frame {self.frame_count}')
+
+                matches01 = self.matcher({"image0": feats0, "image1": feats1})
+
+                feats0, feats1, matches01 = [rbd(x) for x in [feats0, feats1, matches01]]
+
+                kpts0, kpts1 = feats0["keypoints"], feats1["keypoints"]
+                matches0 = matches01["matches0"]
+                scores0 = matches01["matching_scores0"]
+
+                valid = scores0 > threshold
+
+                idx0 = torch.nonzero(valid).squeeze()
+                idx1 = matches0[valid]
+
+                m_kpts0 = kpts0[idx0]
+                m_kpts1 = kpts1[idx1]
+
+                num_matches = len(m_kpts0)
+                mean_score = float(scores0[valid].float().mean().cpu().item())
+                if self.frame_count % 10 == 0:
+                    self.get_logger().debug(f'matches={num_matches}')
             if num_matches > 100:
                 self.get_logger().debug('high match count')
 
@@ -844,10 +932,12 @@ class NGPSLocalizationNode(Node):
                 self._publish_match_pair_panel(frame, img_kl, num_matches, dst)
                 return
             
+            kpts1_np = m_kpts1 if isinstance(m_kpts1, np.ndarray) else m_kpts1.cpu().numpy()
+            kpts0_np = m_kpts0 if isinstance(m_kpts0, np.ndarray) else m_kpts0.cpu().numpy()
             M, mask = cv.findHomography(
-                m_kpts1.cpu().numpy(), 
-                m_kpts0.cpu().numpy(), 
-                cv.RANSAC, 
+                kpts1_np,
+                kpts0_np,
+                cv.RANSAC,
                 5.0
             )
             
@@ -858,7 +948,6 @@ class NGPSLocalizationNode(Node):
                 inlier_ratio = float(np.count_nonzero(mask)) / float(mask.size)
             else:
                 inlier_ratio = 1.0
-            mean_score = float(scores0[valid].float().mean().cpu().item())
             self._last_num_matches = num_matches
             self._last_mean_score = mean_score
             self._last_inlier_ratio = inlier_ratio
@@ -924,14 +1013,26 @@ class NGPSLocalizationNode(Node):
 
             self.publish_results()
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
+            if self.inference_backend == 'pytorch' and self.frame_count % 50 == 0:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
 
             self.frame_count += 1
 
         except Exception as e:
             self.get_logger().warning(f'localization frame: {e}')
+
+    def _should_publish_match_pair_panel(self) -> bool:
+        if not self._publish_match_pair or self.match_pair_pub is None:
+            return False
+        every_n = max(
+            1,
+            int(
+                self.get_parameter('publish_match_pair_every_n').get_parameter_value().integer_value
+            ),
+        )
+        return self.frame_count % every_n == 0
 
     def publish_results(self):
         current_time = self.get_clock().now().to_msg()
@@ -1133,7 +1234,7 @@ class NGPSLocalizationNode(Node):
         num_matches: int,
         dst: Optional[np.ndarray],
     ) -> None:
-        if not self._publish_match_pair or self.match_pair_pub is None:
+        if not self._should_publish_match_pair_panel():
             return
         try:
             kernel_vis = self._kernel_overlay_bgr(kernel_bgr, dst)

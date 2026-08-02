@@ -120,10 +120,7 @@ Read IMU directly from flight controller via I2C/SPI if supported.
    ros2 launch mavros apm.launch.py fcu_url:=/dev/ttyUSB0:921600
    ```
 
-2. **Start VIO system:**
-   ```bash
-   ros2 launch ap_vips vio.launch.py
-   ```
+2. **Start your VIO system** (external package; must publish relative pose/odometry).
 
 3. **Start NGPS localization:**
    ```bash
