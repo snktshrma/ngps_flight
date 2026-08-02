@@ -3,3 +3,8 @@ terrain/
 __pycache__/
 eeprom.bin
 **/__pycache__/
+ap_ngps_ros2/weights/*.engine
+ap_ngps_ros2/weights/*.onnx
+ap_ngps_ros2/weights/*.trt-ready.onnx
+.superpowers/
+docs/superpowers/

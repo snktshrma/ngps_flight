@@ -1,0 +1,15 @@
+# ROS 2 Jazzy pin set (JetPack 7 / vps-jp7) — SITL-only stack, no Gazebo repos.
+# Import: vcs import --recursive --input src/ngps_flight/ros2.jazzy.repos src
+repositories:
+  ardupilot:
+    type: git
+    url: https://github.com/snktshrma/ardupilot.git
+    version: dev/sat-cam
+  micro_ros_agent:
+    type: git
+    url: https://github.com/micro-ROS/micro-ROS-Agent.git
+    version: jazzy
+  micro_ros_msgs:
+    type: git
+    url: https://github.com/micro-ROS/micro_ros_msgs.git
+    version: jazzy
