@@ -14,7 +14,8 @@ PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 WEIGHTS_DIR="${PKG_DIR}/weights"
 mkdir -p "${WEIGHTS_DIR}"
 
-ONNX="${ONNX:-${LIGHTGLUE_ONNX:-/home/rmackay9/LightGlue-ONNX}/weights/superpoint_lightglue_k1024_384x216.onnx}"
+LIGHTGLUE_ONNX="${LIGHTGLUE_ONNX:-${HOME}/LightGlue-ONNX}"
+ONNX="${ONNX:-${LIGHTGLUE_ONNX}/weights/superpoint_lightglue_k1024_384x216.onnx}"
 ENGINE="${ENGINE:-${WEIGHTS_DIR}/superpoint_lightglue_fp16.engine}"
 TRT_ONNX="${WEIGHTS_DIR}/superpoint_lightglue.trt-ready.onnx"
 
@@ -28,18 +29,21 @@ if ! command -v trtexec >/dev/null 2>&1; then
   exit 1
 fi
 
-# Optional TRT parser fix (Reduce-axis initializers) from LightGlue-ONNX
-if [[ -f "/home/rmackay9/LightGlue-ONNX/lightglue_dynamo/scripts/benchmark.py" ]]; then
-  python3 - <<'PY' "${ONNX}" "${TRT_ONNX}"
+# Optional TRT parser fix (Reduce-axis initializers) from LightGlue-ONNX.
+# Passed as argv so the heredoc can stay quoted.
+if [[ -f "${LIGHTGLUE_ONNX}/lightglue_dynamo/scripts/benchmark.py" ]]; then
+  python3 - <<'PY' "${ONNX}" "${TRT_ONNX}" "${LIGHTGLUE_ONNX}"
 import sys
 from pathlib import Path
-sys.path.insert(0, "/home/rmackay9/LightGlue-ONNX")
+sys.path.insert(0, sys.argv[3])
 from lightglue_dynamo.scripts.benchmark import _prepare_tensorrt_onnx
 _prepare_tensorrt_onnx(Path(sys.argv[1]), Path(sys.argv[2]))
 print(f"Prepared TRT ONNX: {sys.argv[2]}")
 PY
   BUILD_ONNX="${TRT_ONNX}"
 else
+  echo "LightGlue-ONNX not found at ${LIGHTGLUE_ONNX}; skipping the TRT parser fix." >&2
+  echo "Set LIGHTGLUE_ONNX=/path/to/LightGlue-ONNX if the engine build fails." >&2
   BUILD_ONNX="${ONNX}"
 fi
 

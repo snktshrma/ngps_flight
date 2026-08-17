@@ -33,6 +33,63 @@ from collections import deque
 from ap_ngps_ros2 import transformations as tf_
 
 
+def _config_base_dirs() -> list[Path]:
+    """Directories a relative path in ngps_config.yaml resolves against, in order.
+
+    Config files ship workspace-relative paths so a checkout is not tied to one
+    user's home directory. Order: the installed share tree, then the source
+    checkout it was built from, then the source tree relative to this file (which
+    is what a symlink-install or a plain `python3 ngps_localization_node.py` sees).
+    """
+    bases: list[Path] = []
+    share: Optional[Path] = None
+    try:
+        from ament_index_python.packages import get_package_share_directory
+
+        share = Path(get_package_share_directory('ap_ngps_ros2'))
+        bases.append(share)
+    except Exception:
+        pass
+
+    # weights/ holds multi-hundred-MB engines that are device-specific and rebuilt per
+    # machine, so CMakeLists deliberately does not install it. Instead the build records
+    # the source checkout in share/source_dir, letting an installed tree point back at it.
+    if share is not None:
+        try:
+            recorded = share.joinpath('source_dir').read_text().strip()
+        except OSError:
+            recorded = ''
+        if recorded:
+            bases.append(Path(recorded))
+            bases.append(Path(recorded).parent)
+
+    here = Path(__file__).resolve()
+    bases.append(here.parents[2])
+    bases.append(here.parents[3])
+    return bases
+
+
+def _resolve_config_path(configured: str) -> str:
+    """Expand ~ and $VARS, then resolve a relative path against the config bases.
+
+    Absolute paths are returned untouched, so an explicit override always wins.
+    A relative path that matches nothing on disk resolves against the first base
+    so the caller still gets a usable absolute path to report in its error.
+    """
+    raw = (configured or '').strip()
+    if not raw:
+        return ''
+    expanded = os.path.expanduser(os.path.expandvars(raw))
+    if os.path.isabs(expanded):
+        return expanded
+    bases = _config_base_dirs()
+    for base in bases:
+        candidate = base / expanded
+        if candidate.exists():
+            return str(candidate)
+    return str(bases[0] / expanded)
+
+
 class NGPSLocalizationNode(Node):
     
     def __init__(self):
@@ -129,10 +186,8 @@ class NGPSLocalizationNode(Node):
         self.declare_parameter('dds_tf_use_unix_wall_time', False)
         self.declare_parameter('ap_time_topic', '/ap/time')
         self.declare_parameter('inference_backend', 'pytorch')
-        self.declare_parameter(
-            'tensorrt_engine_path',
-            str(Path(__file__).resolve().parents[2] / 'weights' / 'superpoint_lightglue_fp16.engine'),
-        )
+        # Relative: _resolve_config_path anchors it, which also works from an install tree.
+        self.declare_parameter('tensorrt_engine_path', 'weights/superpoint_lightglue_fp16.engine')
         self.declare_parameter('tensorrt_warmup', True)
         self.declare_parameter('camera_resize_scale', 1.0)
 
@@ -149,7 +204,9 @@ class NGPSLocalizationNode(Node):
         if self.inference_backend == 'tensorrt':
             from ap_ngps_ros2.trt_matcher import TrtMatcher
 
-            engine_path = self.get_parameter('tensorrt_engine_path').get_parameter_value().string_value
+            engine_path = _resolve_config_path(
+                self.get_parameter('tensorrt_engine_path').get_parameter_value().string_value
+            )
             warmup = self.get_parameter('tensorrt_warmup').get_parameter_value().bool_value
             self.get_logger().info(f'Loading TensorRT engine: {engine_path}')
             self.matcher_trt = TrtMatcher(
@@ -380,14 +437,13 @@ class NGPSLocalizationNode(Node):
         return candidates
 
     def _resolve_reference_image_path(self, configured: str) -> str:
-        raw = (configured or '').strip()
-        expanded = os.path.expanduser(os.path.expandvars(raw)) if raw else ''
+        expanded = _resolve_config_path(configured)
         if expanded and os.path.exists(expanded):
             return expanded
         for candidate in self._reference_image_candidates():
             if os.path.exists(candidate):
                 return candidate
-        return expanded or raw
+        return expanded or (configured or '').strip()
 
     def load_reference_image(self):
         configured = self.get_parameter('reference_image_path').get_parameter_value().string_value

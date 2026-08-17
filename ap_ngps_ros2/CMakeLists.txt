@@ -39,6 +39,14 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+# Record the source checkout. weights/ is not installed - the engines are large and
+# device-specific - so a relative tensorrt_engine_path in ngps_config.yaml has to be
+# resolvable from the install tree back to the source dir. See _config_base_dirs().
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/source_dir" "${CMAKE_CURRENT_SOURCE_DIR}")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/source_dir"
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 set(_NGPS_TIFF_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ngps_config/tiff")
 if(IS_DIRECTORY "${_NGPS_TIFF_DIR}")
   install(DIRECTORY "${_NGPS_TIFF_DIR}" DESTINATION share/${PROJECT_NAME}/ngps_config)

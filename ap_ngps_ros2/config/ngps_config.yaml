@@ -1,6 +1,9 @@
 ngps_localization_node:
   ros__parameters:
-    reference_image_path: "/home/rmackay9/ngps_ws/src/ngps_flight/ngps_config/tiff/osrf0/osrf.tif"
+    # Relative paths resolve against the installed share tree, then the package source
+    # dir, then the ngps_flight repo root. Absolute paths and ~ / $VARS also work and
+    # always win, so keep these workspace-relative rather than tied to one home dir.
+    reference_image_path: "ngps_config/tiff/osrf0/osrf.tif"
     reference_max_edge: 4096
     # camera_topic: "/camera/image_raw"
     camera_topic: "/camera/image_raw/compressed"
@@ -34,7 +37,8 @@ ngps_localization_node:
     max_keypoints: 1024
     camera_resize_scale: 1.0
     inference_backend: "tensorrt"
-    tensorrt_engine_path: "/home/rmackay9/ngps_ws/src/ngps_flight/ap_ngps_ros2/weights/superpoint_lightglue_k1024_640x360_fp16.engine"
+    # weights/ is not installed into share/, so this resolves against the package source dir.
+    tensorrt_engine_path: "weights/superpoint_lightglue_k1024_640x360_fp16.engine"
     tensorrt_warmup: true
 
     publish_ap_dds_tf: true

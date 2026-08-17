@@ -105,8 +105,10 @@ sudo systemctl restart docker
 ```bash
 mkdir -p ~/ngps_ws/src
 cd ~/ngps_ws/src
-git clone https://github.com/snktshrma/ngps_flight.git -b main_jazzy
+git clone https://github.com/snktshrma/ngps_flight.git
 ```
+
+The default branch (`main`) is the one to use - the repo also carries a stale `master`.
 
 **Step 4: Build the Docker image** (30–60 min on device)
 
@@ -114,6 +116,10 @@ git clone https://github.com/snktshrma/ngps_flight.git -b main_jazzy
 cd ~/ngps_ws/src/ngps_flight
 docker build -f Dockerfile.jp7.dev -t ngps-vps-dev-arm:jp72-cu132-jazzy-v2 .
 ```
+
+> If the build fails on apt/curl steps with DNS or timeout errors, add `--network=host`.
+> Docker's default bridge cannot use a `127.0.0.53` systemd-resolved stub and falls back
+> to public DNS, which some networks block.
 
 > **Docker only** (skip Steps 5–6). Distrobox is recommended - it handles the home mount and
 > display/audio passthrough - but plain Docker works and needs no `--init-hooks`, because the
@@ -154,9 +160,15 @@ For Ubuntu:
 ```bash
 sudo apt install distrobox
 
-export DBX_CONTAINER_MANAGER=docker
-echo "export DBX_CONTAINER_MANAGER=docker" >> ~/.bashrc
+mkdir -p ~/.config/distrobox
+printf 'container_manager="docker"\n' > ~/.config/distrobox/distrobox.conf
 ```
+
+> Distrobox autodetects podman first and only falls back to docker, so if podman is
+> installed it will pick the wrong one. The config file pins the choice for every
+> invocation - including the non-interactive `scripts/run_*.sh` launchers, which an
+> `export DBX_CONTAINER_MANAGER=docker` in `~/.bashrc` would not reach (bash skips
+> `~/.bashrc` in non-interactive shells, and zsh never reads it at all).
 
 **Step 6: Create the Distrobox**
 
