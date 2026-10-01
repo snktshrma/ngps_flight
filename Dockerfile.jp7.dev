@@ -30,6 +30,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         default-jre \
         # MAVProxy --console and --map GUI (wxPython)
         python3-wxgtk4.0 python3-matplotlib python3-lxml python3-pygame \
+        # GStreamer for ap_dataset_logger's RTSP camera bringup. The NVIDIA elements
+        # (nvv4l2decoder, nvvidconv) come from the host via the nvidia runtime, but the
+        # GStreamer core, the RTSP/RTP elements and the PyGObject typelib do not.
+        # Note nvjpegenc stays unusable here: it needs L4T's libnvjpeg from
+        # /usr/lib/aarch64-linux-gnu/tegra, which this CUDA base image does not carry,
+        # so the camera node auto-falls back to CPU jpegenc. Install
+        # nvidia-l4t-gstreamer if you want the hardware JPEG encoder.
+        gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+        gstreamer1.0-tools \
     && locale-gen en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 

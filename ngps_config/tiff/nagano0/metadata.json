@@ -1,0 +1,8 @@
+{
+ "name": "{z}/{x}/{y}.png",
+ "description": "Mapbox satellite z20, NGPS flight1 2026-09-18",
+ "format": "png",
+ "bounds": "138.6361312866211,36.32148760442219,138.6426544189453,36.32674315538624",
+ "center": "138.639276,36.324223",
+ "zoom_level": 20
+}

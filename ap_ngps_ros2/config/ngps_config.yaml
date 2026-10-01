@@ -54,8 +54,8 @@ ngps_localization_node:
     reference_max_lon: -122.07302115741979
     reference_max_lat: 37.40598520512967
     reference_altitude: 0.0
-    altitude_topic: "/ap/geopose/filtered"
-    altitude_source: "geopose"
+    altitude_topic: "/ap/pose/filtered"
+    altitude_source: "pose"   # height above home; geopose altitude is AMSL
     default_altitude_m: 10.0
     mosaic_meters_per_pixel: 0.0
     mosaic_meters_per_pixel_source_full_res: true
@@ -65,3 +65,6 @@ ngps_localization_node:
     first_fix_min_mean_score: 0.48
     first_fix_min_inlier_ratio: 0.35
     vps_pose_variance_base_m2: 4.0
+    # SITL camera: keep the map crop fixed-size rather than the flight camera's HFOV
+    # (camera.py), which is now the node default.
+    kernel_hfov_deg: 0.0
