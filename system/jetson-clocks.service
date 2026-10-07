@@ -1,0 +1,22 @@
+# Pin CPU/GPU/EMC clocks at the current power mode's maximum on every boot.
+# nvpmodel.service restores the power mode (MAXN_SUPER) itself; jetson_clocks does not persist.
+#
+# Install:
+#   sudo cp ~/ngps_ws/src/ngps_flight/system/jetson-clocks.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now jetson-clocks.service
+# Check:
+#   systemctl status jetson-clocks.service; sudo jetson_clocks --show
+[Unit]
+Description=Pin Jetson clocks at max (jetson_clocks) after nvpmodel
+After=nvpmodel.service nvfancontrol.service
+Wants=nvpmodel.service
+
+[Service]
+Type=oneshot
+# nvpmodel applies the mode asynchronously at boot; let it settle before pinning.
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/jetson_clocks
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

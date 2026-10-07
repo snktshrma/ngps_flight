@@ -115,6 +115,30 @@ def check_params(node: str, params: dict) -> List[Finding]:
         for key in ('pose_topic', 'gps_topic', 'home_jump_m'):
             if key in params:
                 out.append((WARN, f'{key}: no longer used (the frame is the EKF origin, not home); remove it'))
+        backend = str(params.get('vo_backend', 'opencv'))
+        if backend not in ('opencv', 'vpi_cuda'):
+            out.append((ERROR, f"vo_backend {backend!r}: must be 'opencv' or 'vpi_cuda'"))
+        fpl = int(params.get('vpi_features_per_level', 500))
+        if not 100 <= fpl <= 2000:
+            out.append((ERROR, f'vpi_features_per_level {fpl}: outside 100-2000'))
+        pm = float(params.get('predict_ms', 0.0))
+        if not 0.0 <= pm <= 400.0:
+            out.append((ERROR, f'predict_ms {pm:g}: outside 0-400 (it should be measured lag - VISO_DELAY_MS)'))
+        pw = float(params.get('predict_window_s', 0.3))
+        if not 0.1 <= pw <= 1.0:
+            out.append((ERROR, f'predict_window_s {pw:g}: outside 0.1-1.0 s'))
+        nb = float(params.get('ngps_blend_mps', 0.4))
+        if not 0.0 <= nb <= 5.0:
+            out.append((ERROR, f'ngps_blend_mps {nb:g}: outside 0-5 m/s'))
+        source = str(params.get('camera_source', 'topic'))
+        if source not in ('topic', 'rtsp'):
+            out.append((ERROR, f"camera_source {source!r}: must be 'topic' or 'rtsp'"))
+        if source == 'rtsp':
+            url = str(params.get('rtsp_url', 'rtsp://192.168.144.25:8554/video1'))
+            if not url.startswith('rtsp://'):
+                out.append((ERROR, f'rtsp_url {url!r} is not an rtsp:// URL'))
+            if str(params.get('rtsp_codec', 'h264')) not in ('h264', 'h265'):
+                out.append((ERROR, f"rtsp_codec {params.get('rtsp_codec')!r}: must be 'h264' or 'h265'"))
     if rate < MIN_TF_HZ:
         out.append((ERROR, f'{tf_topic} rate {rate:g} Hz: below {MIN_TF_HZ:g} Hz ArduPilot times visual odometry out'))
     if tf_topic != AP_TF:
@@ -142,7 +166,7 @@ def check_params(node: str, params: dict) -> List[Finding]:
             out.append((ERROR, f'{key} {got:g} differs from the measured camera ({want:g}, camera.py); '
                                'remove it from the config'))
 
-    for key in ('reference_image_path', 'metadata_path', 'tensorrt_engine_path'):
+    for key in ('reference_image_path', 'metadata_path', 'tensorrt_engine_path', 'terrain_dem_path'):
         path = str(params.get(key, '') or '')
         if path and os.path.isabs(os.path.expanduser(path)) and not os.path.exists(os.path.expanduser(path)):
             out.append((ERROR, f'{key}: {path} does not exist'))
@@ -158,6 +182,12 @@ def check_params(node: str, params: dict) -> List[Finding]:
             want = 156543.03392 * math.cos(math.radians(lat)) / 2 ** int(zoom)
             if abs(mpp - want) / want > 0.02:
                 out.append((ERROR, f'mosaic_meters_per_pixel {mpp:g} but the map is zoom {zoom} ({want:.4f} m/px)'))
+        off = meta.get('offset_en_m')
+        if off is not None:
+            if len(off) != 2 or math.hypot(float(off[0]), float(off[1])) > 10.0:
+                out.append((ERROR, f'map metadata offset_en_m {off}: must be [east, north] and under 10 m'))
+            elif node != 'vo_ngps_fusion_node':
+                out.append((WARN, f'map offset_en_m {off} is applied by vo_ngps_fusion_node only'))
         if bounds and node == 'ngps_localization_node':
             keys = ('reference_min_lon', 'reference_min_lat', 'reference_max_lon', 'reference_max_lat')
             if all(k in params for k in keys):

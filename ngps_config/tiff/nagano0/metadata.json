@@ -4,5 +4,10 @@
  "format": "png",
  "bounds": "138.6361312866211,36.32148760442219,138.6426544189453,36.32674315538624",
  "center": "138.639276,36.324223",
- "zoom_level": 20
+ "zoom_level": 20,
+ "offset_en_m": [
+  -2.35,
+  1.19
+ ],
+ "offset_note": "Map content minus truth (east, north), metres: where this mosaic puts the ground relative to GPS. Measured from 48 NGPS fixes against GPS on flights 2 (2026-09-24: E -2.50, N +0.86) and 3 (2026-09-25: E -2.20, N +1.48); 95% CI of the mean +/-0.30 m. Valid around the flight area only. vo_ngps_fusion_node subtracts it from every fix."
 }

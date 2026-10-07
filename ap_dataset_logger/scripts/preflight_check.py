@@ -224,6 +224,39 @@ def watch_node_inputs(probe, node, params, cc):
     return alt_topic, source, tf_topic
 
 
+NADIR_TOL_DEG = 5.0
+FC_MAVLINK = 'tcp:192.168.144.15:5760'
+
+
+def pitch_from_quaternion(q):
+    """Pitch (deg, nose/lens down negative, ArduPilot convention) from a MAVLink [w, x, y, z] quaternion."""
+    w, x, y, z = q
+    return math.degrees(math.asin(max(-1.0, min(1.0, 2.0 * (w * y - z * x)))))
+
+
+def gimbal_pitch(addr, timeout=6.0):
+    """The gimbal's pitch as ArduPilot reports it (GIMBAL_DEVICE_ATTITUDE_STATUS), or None.
+
+    Not on DDS, so this reads the FC's MAVLink link. Flight 8 (2026-10-06) flew with the gimbal at 0 deg,
+    looking at the horizon: VO tracked hills and clouds and the drone wandered 8 m in 30 s on ExtNav.
+    """
+    try:
+        from pymavlink import mavutil
+        m = mavutil.mavlink_connection(addr, source_system=240, source_component=192)
+        if not m.wait_heartbeat(timeout=timeout):
+            return None
+        m.mav.command_long_send(1, 1, 511, 0, 285, 200000, 0, 0, 0, 0, 0)   # 5 Hz
+        m.mav.command_long_send(1, 1, 512, 0, 285, 0, 0, 0, 0, 0, 0)
+        end = time.time() + timeout
+        while time.time() < end:
+            x = m.recv_match(type='GIMBAL_DEVICE_ATTITUDE_STATUS', blocking=True, timeout=1)
+            if x is not None:
+                return pitch_from_quaternion(x.q)
+    except Exception:
+        return None
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -232,6 +265,8 @@ def main():
                     help='which flight-controller link is in use')
     ap.add_argument('--bag-dir', default=DEFAULT_BAG_ROOT,
                     help='where the recorder writes (to check the bag is growing)')
+    ap.add_argument('--mavlink', default=FC_MAVLINK,
+                    help="FC MAVLink link for the gimbal-pitch check ('' to skip)")
     ap.add_argument('--node-config', default='',
                     help='parameter file of the live NGPS / VO node (flight_log.sh --ngps/--fusion)')
     args = ap.parse_args()
@@ -427,6 +462,17 @@ def main():
     free_gb = shutil.disk_usage(args.bag_dir if os.path.isdir(args.bag_dir) else '/').free / 1e9
     add('disk', GO if free_gb >= 10 else WARN if free_gb >= 4 else NOGO,
         f'{free_gb:.1f} GB free  (~{free_gb / (rate * 3.6):.1f} h at {rate:.1f} MB/s)')
+
+    if args.mavlink and args.node_config:
+        # VO and NGPS assume a straight-down (nadir) camera
+        pitch = gimbal_pitch(args.mavlink)
+        if pitch is None:
+            add('gimbal', WARN, f'could not read the gimbal attitude over {args.mavlink}: check by eye that it points DOWN')
+        elif abs(pitch + 90.0) <= NADIR_TOL_DEG:
+            add('gimbal', GO, f'pitch {pitch:.1f} deg: pointing straight down')
+        else:
+            add('gimbal', WARN, f'pitch {pitch:.1f} deg, NOT pointing down (need -90 +/- {NADIR_TOL_DEG:g}): '
+                                'VO/NGPS would track the horizon; point the gimbal down (MNT1_NEUTRAL_Y -90)')
 
     node.destroy_node()
     rclpy.shutdown()

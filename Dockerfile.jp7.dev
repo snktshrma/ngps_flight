@@ -110,6 +110,7 @@ RUN curl -sSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
         libnvonnxparsers-dev=${TRT_VERSION} \
         python3-libnvinfer=${TRT_VERSION} \
         libnvinfer-bin=${TRT_VERSION} \
+        libnvvpi4 python3.12-vpi4 \
     && apt-mark hold 'libnvinfer*' 'libnvonnxparsers*' 'python3-libnvinfer*' \
     && rm -rf /var/lib/apt/lists/*
 

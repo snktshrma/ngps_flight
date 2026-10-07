@@ -1,0 +1,30 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "GSI seamlessphoto (Source: GSI tiles / 出典：地理院タイル) z18",
+ "source": "gsi_seamless",
+ "bounds": "138.614501953125,36.319551259461186,138.62274169921875,36.32618995618608",
+ "center": "138.618168,36.323136",
+ "zoom_level": 18,
+ "meters_per_pixel": 0.48113,
+ "size_px": [
+  1536,
+  1536
+ ],
+ "site_px": [
+  683,
+  707
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-07",
+ "terrain_m": {
+  "dem": "dem5a",
+  "radius_m": 150.0,
+  "centre": 921.1,
+  "min": 914.5,
+  "max": 943.9,
+  "north": 933.2,
+  "south": 938.3,
+  "east": NaN,
+  "west": 916.7
+ }
+}

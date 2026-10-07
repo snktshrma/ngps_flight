@@ -5,12 +5,31 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import atexit
+import contextlib
+
 import numpy as np
-import pycuda.autoinit  # noqa: F401
 import pycuda.driver as cuda
 import tensorrt as trt
 
 from ap_ngps_ros2.superpoint_preprocess import preprocess_pair_bgr
+
+# The device's *primary* context, shared with the CUDA runtime API (VPI, PyTorch). pycuda.autoinit
+# would create a separate context and leave it current, after which VPI's CUDA calls in the same
+# process fail with cudaErrorInvalidValue. It is pushed only around our own calls, so it is current
+# on whichever executor thread runs them and is never left on another library's thread.
+cuda.init()
+_PRIMARY = cuda.Device(0).retain_primary_context()
+atexit.register(_PRIMARY.detach)
+
+
+@contextlib.contextmanager
+def _cuda_ctx():
+    _PRIMARY.push()
+    try:
+        yield
+    finally:
+        cuda.Context.pop()
 
 
 def parse_trt_matches(
@@ -67,6 +86,11 @@ class TrtMatcher:
             raise FileNotFoundError(f"TensorRT engine not found: {engine_path}")
 
         self.match_threshold = match_threshold
+        with _cuda_ctx():
+            self._init(path, warmup)
+
+    def _init(self, path: Path, warmup: bool) -> None:
+        engine_path = str(path)
         self.logger = trt.Logger(trt.Logger.WARNING)
         runtime = trt.Runtime(self.logger)
 
@@ -109,6 +133,10 @@ class TrtMatcher:
         self._execute(dummy)
 
     def _execute(self, images: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        with _cuda_ctx():
+            return self._execute_in_ctx(images)
+
+    def _execute_in_ctx(self, images: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         input_name = self.engine.get_tensor_name(0)
         host_in = self._host[input_name]
         np.copyto(host_in, images.ravel())
