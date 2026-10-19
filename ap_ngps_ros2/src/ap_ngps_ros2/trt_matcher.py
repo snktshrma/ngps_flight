@@ -142,18 +142,30 @@ class TrtMatcher:
         np.copyto(host_in, images.ravel())
         cuda.memcpy_htod_async(self._device[input_name], host_in, self.stream)
 
+        output_names = [
+            self.engine.get_tensor_name(i)
+            for i in range(self.engine.num_io_tensors)
+            if self.engine.get_tensor_mode(self.engine.get_tensor_name(i)) != trt.TensorIOMode.INPUT
+        ]
+        # Clear the outputs before every run. matches/mscores are allocated at their maximum size and
+        # reused; the engine writes only the first N entries (N = current matches) and leaves the rest
+        # untouched, so entries left from the previous call would otherwise be counted by
+        # count_nonzero(mscores) below.
+        for name in output_names:
+            self._host[name].fill(0)
+            cuda.memcpy_htod_async(self._device[name], self._host[name], self.stream)
+
         self.context.execute_async_v3(stream_handle=self.stream.handle)
 
-        outputs: dict[str, np.ndarray] = {}
-        for i in range(self.engine.num_io_tensors):
-            name = self.engine.get_tensor_name(i)
-            if self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                continue
+        for name in output_names:
             cuda.memcpy_dtoh_async(self._host[name], self._device[name], self.stream)
+        # Wait for the device-to-host copies before reading the host buffers.
+        self.stream.synchronize()
+
+        outputs: dict[str, np.ndarray] = {}
+        for name in output_names:
             shape = tuple(self.context.get_tensor_shape(name))
             outputs[name] = self._host[name].reshape(shape).copy()
-
-        self.stream.synchronize()
         keypoints = outputs["keypoints"]
         matches = outputs["matches"]
         mscores = outputs["mscores"]
