@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ap_dataset_logger</name>
+  <version>0.0.0</version>
+  <description>Flight dataset capture: low-latency RTSP camera bringup with RTCP-synced
+  timestamps, recorded to mcap alongside the ArduPilot topics.</description>
+  <maintainer email="sharma.sanket272@gmail.com">Sanket Sharma</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+
+  <!-- GStreamer is reached through PyGObject; the Jetson elements (nvv4l2decoder,
+       nvjpegenc) ship with L4T rather than with a rosdep key. -->
+  <exec_depend>python3-gi</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-base</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-good</exec_depend>
+  <exec_depend>gstreamer1.0-plugins-bad</exec_depend>
+
+  <!-- MAVLink fallback (link:=mavlink) -->
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>mavros_msgs</exec_depend>
+
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,77 @@
+ngps_localization_node:
+  ros__parameters:
+    reference_image_path: /home/rmackay9/ngps_ws/src/ngps_flight/ngps_config/tiff/nagano_gsi2018/mosaic.tif
+    reference_max_edge: 2304
+    camera_topic: /camera/image_raw/compressed
+    camera_compressed: true
+    kernel_size: 900
+    kernel_max_size: 3000
+    kernel_grow_fill_ratio: 0.85
+    kernel_grow_factor: 1.25
+    initial_base_x: 1228
+    initial_base_y: 1033
+    match_threshold: 0.5
+    min_matches: 20
+    min_frame_inlier_ratio: 0.22
+    max_kernel_translation_step_px: 120.0
+    reject_degenerate_homography: true
+    kernel_rotation_use_rect_tilt: true
+    kernel_rotation_k: 0.35
+    kernel_rotation_max_step_deg: 3.0
+    kernel_rotation_deadband_deg: 0.5
+    kernel_rotation_rect_sign: 1.0
+    max_rotation_change: 30.0
+    rotation_std_threshold: 15.0
+    max_rotation_history: 10
+    enable_rotation_smoothing: true
+    enable_rotation_validation: true
+    frame_id: map
+    publish_match_pair: false
+    publish_match_pair_every_n: 10
+    debug_match_pair_topic: ngps/match_pair
+    enable_gpu: true
+    max_keypoints: 1024
+    camera_resize_scale: 0.5
+    inference_backend: tensorrt
+    tensorrt_engine_path: /home/rmackay9/ngps_ws/src/ngps_flight/ap_ngps_ros2/weights/superpoint_lightglue_k1024_640x360_fp16.engine
+    tensorrt_warmup: true
+    publish_ap_dds_tf: true
+    ap_dds_tf_topic: /ap/tf
+    dds_tf_median_window: 1
+    dds_tf_use_unix_wall_time: true
+    dds_tf_use_ap_time: false
+    ap_time_topic: /ap/time
+    reference_min_lon: 138.63372802734375
+    reference_min_lat: 36.319551259461186
+    reference_max_lon: 138.64608764648438
+    reference_max_lat: 36.329509092476655
+    reference_altitude: 0.0
+    # Height above the takeoff point, from the autopilot over DDS. MAVROS topics do
+    # not exist on a DDS link: pointing here at /mavros/... leaves the altitude at its
+    # default and min_altitude_m then silently skips every frame.
+    altitude_topic: /ap/pose/filtered
+    altitude_source: pose
+    default_altitude_m: 0.0
+    mosaic_meters_per_pixel: 0.48112
+    mosaic_meters_per_pixel_source_full_res: true
+    enable_global_coordinates: true
+    pixel_utm_map_path: ''
+    first_fix_min_matches: 45
+    first_fix_min_mean_score: 0.48
+    first_fix_min_inlier_ratio: 0.35
+    vps_pose_variance_base_m2: 4.0
+    initial_rotation_deg: 169.7
+    min_altitude_m: 50.0
+
+    # Initial guess from the autopilot: average the first few GPS fixes and attitudes
+    # into a starting map position and heading. NGPS does not read GPS after this.
+    initial_pose_from_gps: true
+    initial_pose_gps_samples: 5
+    initial_pose_gps_topic: /ap/navsat
+    initial_pose_attitude_topic: /ap/geopose/filtered
+    # Camera intrinsics (kernel_hfov_deg 49.2 measured on flight 1 -- was 71.8, which
+    # oversized the crop 1.6x -- yaw offset and the ~3 deg off-nadir offset) come from
+    # ap_ngps_ros2/camera.py; config_check rejects a value here that disagrees with it.
+    # /ap/tf keep-alive so ArduPilot sees visual odometry as healthy and lets the vehicle arm
+    dds_tf_rate_hz: 10.0
+    dds_tf_before_first_fix: true

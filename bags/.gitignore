@@ -1,0 +1,5 @@
+# Recorded bags and frame logs are run artifacts, not source. A flight bag runs to
+# ~9 GB/hour at JPEG q85 -- nothing here belongs in the repo.
+*
+!.gitkeep
+!.gitignore

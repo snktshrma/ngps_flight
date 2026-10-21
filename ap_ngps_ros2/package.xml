@@ -18,6 +18,7 @@
   <depend>tf2_msgs</depend>
   <depend>geographic_msgs</depend>
   <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>ap_dataset_logger</exec_depend>  <!-- camera_clock_sync, for camera_source: rtsp -->
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>
 

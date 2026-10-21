@@ -5,12 +5,31 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import atexit
+import contextlib
+
 import numpy as np
-import pycuda.autoinit  # noqa: F401
 import pycuda.driver as cuda
 import tensorrt as trt
 
 from ap_ngps_ros2.superpoint_preprocess import preprocess_pair_bgr
+
+# The device's *primary* context, shared with the CUDA runtime API (VPI, PyTorch). pycuda.autoinit
+# would create a separate context and leave it current, after which VPI's CUDA calls in the same
+# process fail with cudaErrorInvalidValue. It is pushed only around our own calls, so it is current
+# on whichever executor thread runs them and is never left on another library's thread.
+cuda.init()
+_PRIMARY = cuda.Device(0).retain_primary_context()
+atexit.register(_PRIMARY.detach)
+
+
+@contextlib.contextmanager
+def _cuda_ctx():
+    _PRIMARY.push()
+    try:
+        yield
+    finally:
+        cuda.Context.pop()
 
 
 def parse_trt_matches(
@@ -67,6 +86,11 @@ class TrtMatcher:
             raise FileNotFoundError(f"TensorRT engine not found: {engine_path}")
 
         self.match_threshold = match_threshold
+        with _cuda_ctx():
+            self._init(path, warmup)
+
+    def _init(self, path: Path, warmup: bool) -> None:
+        engine_path = str(path)
         self.logger = trt.Logger(trt.Logger.WARNING)
         runtime = trt.Runtime(self.logger)
 
@@ -109,23 +133,39 @@ class TrtMatcher:
         self._execute(dummy)
 
     def _execute(self, images: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        with _cuda_ctx():
+            return self._execute_in_ctx(images)
+
+    def _execute_in_ctx(self, images: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         input_name = self.engine.get_tensor_name(0)
         host_in = self._host[input_name]
         np.copyto(host_in, images.ravel())
         cuda.memcpy_htod_async(self._device[input_name], host_in, self.stream)
 
+        output_names = [
+            self.engine.get_tensor_name(i)
+            for i in range(self.engine.num_io_tensors)
+            if self.engine.get_tensor_mode(self.engine.get_tensor_name(i)) != trt.TensorIOMode.INPUT
+        ]
+        # Clear the outputs before every run. matches/mscores are allocated at their maximum size and
+        # reused; the engine writes only the first N entries (N = current matches) and leaves the rest
+        # untouched, so entries left from the previous call would otherwise be counted by
+        # count_nonzero(mscores) below.
+        for name in output_names:
+            self._host[name].fill(0)
+            cuda.memcpy_htod_async(self._device[name], self._host[name], self.stream)
+
         self.context.execute_async_v3(stream_handle=self.stream.handle)
 
-        outputs: dict[str, np.ndarray] = {}
-        for i in range(self.engine.num_io_tensors):
-            name = self.engine.get_tensor_name(i)
-            if self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                continue
+        for name in output_names:
             cuda.memcpy_dtoh_async(self._host[name], self._device[name], self.stream)
+        # Wait for the device-to-host copies before reading the host buffers.
+        self.stream.synchronize()
+
+        outputs: dict[str, np.ndarray] = {}
+        for name in output_names:
             shape = tuple(self.context.get_tensor_shape(name))
             outputs[name] = self._host[name].reshape(shape).copy()
-
-        self.stream.synchronize()
         keypoints = outputs["keypoints"]
         matches = outputs["matches"]
         mscores = outputs["mscores"]

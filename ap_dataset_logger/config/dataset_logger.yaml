@@ -1,0 +1,58 @@
+rtsp_camera_node:
+  ros__parameters:
+    # The ArduPilot ZR10 firmware serves /video1 (main) and /video2 (sub), both H264.
+    # Older firmware served H265 from /main.264, which now returns 404.
+    rtsp_url: "rtsp://192.168.144.25:8554/video1"
+    # "auto" runs an RTSP DESCRIBE at startup and believes the SDP, not the filename.
+    codec: "auto"
+    image_topic: "/camera/image_raw/compressed"
+    frame_id: "camera"
+
+    # 85 costs ~9 GB/hour; 70 costs ~1.6 GB/hour but visibly softens the texture that
+    # SuperPoint keys on. Prefer archive_h265 over dropping quality to save space.
+    jpeg_quality: 85
+
+    # 0 disables the RTP jitter buffer, whose 2000 ms default is the single largest
+    # source of RTSP latency. Raise to 50-100 only if the link starts losing packets.
+    rtsp_latency_ms: 0
+    protocols: "udp"
+
+    qos_depth: 30
+    qos_reliable: true
+
+    # Which camera clock to map onto host time, so frames carry capture time rather
+    # than arrival time (arrival carries network jitter, which is unrecoverable later).
+    #   auto    - RTCP if the camera sends sender reports, else the RTP header clock
+    #   rtcp    - force RTCP (older ZR10 firmware)
+    #   rtp     - force the RTP header clock (current firmware sends no sender reports)
+    #   arrival - no sync; stamp on arrival
+    sync_source: "auto"
+    use_rtcp_timestamps: true
+    sync_window_s: 120.0
+    # Constant glass-to-RTCP latency, which clock fitting cannot observe. Populate from
+    # scripts/measure_camera_latency.py; 0 leaves timestamps at RTCP capture time.
+    latency_offset_ms: 150.0   # measured 2026-10-01, strobe test with the leaky decoder queue
+
+    watchdog_s: 5.0
+    reconnect_backoff_s: 2.0
+    max_backoff_s: 20.0
+
+    # Pristine copy of the source elementary stream: no re-encode, no quality loss,
+    # ~0.7 GB/hour. Cheap insurance for a flight you cannot repeat.
+    archive_h265: false
+    archive_dir: ""
+    archive_split_bytes: 500000000
+
+    diagnostics_period_s: 1.0
+
+    # How often the executor drains frames queued by the GStreamer thread. Affects
+    # publication liveness only -- timestamps are fixed at capture, not at publish.
+    drain_rate_hz: 200.0
+
+    # auto probes nvjpegenc in a subprocess and falls back to CPU jpegenc if it is
+    # unusable. It is unusable inside the CUDA-base container (L4T libnvjpeg is absent
+    # there), so expect "jpegenc" in the container and "nvjpegenc" on the host.
+    jpeg_encoder: "auto"
+    # Forces the decoder to max clocks. Off by default; the governor handles it and it
+    # is one less thing poking Tegra power management from inside a container.
+    decoder_max_performance: false

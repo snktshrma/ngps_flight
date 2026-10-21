@@ -1,0 +1,35 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "Mapbox satellite (Maxar-based) z20",
+ "source": "mapbox",
+ "bounds": "138.6148452758789,36.32038112747792,138.62171173095703,36.32591335511325",
+ "center": "138.618168,36.323136",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.12028,
+ "size_px": [
+  5120,
+  5120
+ ],
+ "site_px": [
+  2478,
+  2570
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-07",
+ "terrain_m": {
+  "dem": "dem5a",
+  "radius_m": 150.0,
+  "centre": 921.1,
+  "min": 914.5,
+  "max": 943.9,
+  "north": 933.2,
+  "south": 938.3,
+  "east": NaN,
+  "west": 916.7
+ },
+ "offset_en_m": [
+  0.54,
+  -2.44
+ ],
+ "offset_note": "Map content minus truth (east, north), metres. Measured 2026-10-07 on flight 9 (GPS flight): median of 12 slow NGPS fixes vs GPS with terrain correction, spread p50 0.5 m (map_compare.py, bags/flight9_20261007_140747_map_compare.json). Valid around the takeoff clearing only. vo_ngps_fusion_node subtracts it from every fix."
+}

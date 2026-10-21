@@ -1,0 +1,23 @@
+# Flight logger web UI (start / status / stop / FC log download) on port 8020, at boot.
+#
+# Install:
+#   sudo cp ~/ngps_ws/src/ngps_flight/system/flight-ui.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now flight-ui.service
+# Open: http://<jetson-ip>:8020   (no login: private drone networks only)
+[Unit]
+Description=Flight logger web UI
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=rmackay9
+Group=rmackay9
+SupplementaryGroups=docker
+Environment=HOME=/home/rmackay9
+WorkingDirectory=/home/rmackay9/ngps_ws/src/ngps_flight/ap_dataset_logger/scripts
+ExecStart=/usr/bin/python3 /home/rmackay9/ngps_ws/src/ngps_flight/ap_dataset_logger/scripts/flight_ui.py --port 8020
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

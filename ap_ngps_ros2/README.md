@@ -99,9 +99,48 @@ ros2 launch ap_ngps_ros2 ngps_localization.launch.py camera_topic:=/camera/image
 - `/ngps/global_position` (sensor_msgs/msg/NavSatFix): Global position in WGS84 coordinates (lat/lon/alt) - *only published if `enable_global_coordinates` is true*
 - `/ngps/ecef_position` (geometry_msgs/msg/PointStamped): Position in ECEF (Earth-Centered, Earth-Fixed) coordinates - *only published if `enable_global_coordinates` is true*
 
+- `/ap/statustext` (ardupilot_msgs/msg/StatusText): Short status lines for the GCS console - *see [GCS status messages](#gcs-status-messages)*
+
 ### Subscribed Topics
 
 - `/camera/image_raw` (sensor_msgs/msg/Image): Input camera images
+
+## GCS status messages
+
+ArduPilot forwards `/ap/statustext` to the GCS as MAVLink STATUSTEXT, so NGPS
+state shows up in the Mission Planner / QGC / MAVProxy console prefixed with
+`DDS: NGPS: `. It needs ArduPilot DDS enabled and an `ardupilot_msgs` build that
+carries `StatusText`; without it the node logs one line at startup and carries on
+with ROS logging only.
+
+The GCS queue is only 10-30 deep and shared with ArduPilot's own messages, so the
+node reports **state changes only**, one message at a time, with repeats
+suppressed:
+
+| When | Severity | Example |
+|---|---|---|
+| Node start | INFO | `started: tensorrt, map mosaic.tif 2304x2304px, alt>50m` |
+| Engine or map missing | ERROR | `engine load failed: superpoint_lightglue_k1024_640x360_fp16.engine` |
+| First position fix | INFO | `first fix: matches 58, inliers 72%, alt 96m` |
+| Matching but not locking on (max once a minute) | NOTICE | `searching: matches 12, inliers 21%, alt 94m` |
+| Fix lost / regained | WARNING / INFO | `position lost, 6s (matches 9, inliers 18%)` |
+| Below the altitude gate / back above it | NOTICE / INFO | `paused below 50m (at 32m)` |
+| No camera frames / frames resumed | WARNING / INFO | `no camera frames for 5s` |
+| Repeated frame errors (max every 2 min) | WARNING | `frame error: RuntimeError` |
+
+Parameters (all optional):
+
+```yaml
+statustext_enable: true          # false disables publishing; node logging is unaffected
+statustext_topic: /ap/statustext
+statustext_min_interval_s: 2.0   # minimum gap between published messages
+statustext_repeat_s: 30.0        # suppress the same message for this long
+statustext_fix_timeout_s: 5.0    # report a lost fix after this long without a position
+statustext_camera_timeout_s: 5.0 # report a lost camera after this long without a frame
+```
+
+Messages are held until ArduPilot's subscriber is discovered, so the startup line
+is not lost to a race. Text is truncated to fit the GCS buffer.
 
 ## Configuration
 
