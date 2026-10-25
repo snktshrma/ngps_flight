@@ -1,0 +1,23 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "Mapbox satellite (Maxar-based) z20, covers Zone 2 + green 1 km box + audience area; takeoff 45.317542,-75.756285",
+ "source": "mapbox",
+ "bounds": "-75.77133178710938,45.308941579503745,-75.75244903564453,45.32221995639695",
+ "center": "-75.762034,45.315521",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.10498,
+ "size_px": [
+  14080,
+  14080
+ ],
+ "site_px": [
+  6933,
+  7104
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-24",
+ "takeoff_px": [
+  11220,
+  4961
+ ]
+}

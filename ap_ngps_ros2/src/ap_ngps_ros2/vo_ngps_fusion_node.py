@@ -157,6 +157,25 @@ class KeyframeVO:
     def _pair(self, a, b):
         return self.matcher.pair(a, b)
 
+    def warm_up(self, width: int = 640, height: int = 360) -> None:
+        """Run the whole VO path once on a synthetic textured pair, then forget it.
+
+        The first real VO frame otherwise pages in OpenCV/VPI code that has never run in this process; from
+        the nearly full SD card that took up to 1.7 s while holding the GIL, so /ap/tf stalled right after
+        arming (flights 9/10, reproduced in replay). A VPI failure here falls back to CPU ORB exactly as it
+        would in flight (fallback_reason is kept, so the node reports it).
+        """
+        rng = np.random.default_rng(0)
+        big = cv.GaussianBlur((rng.random((height + 40, width + 40)) * 255).astype(np.uint8), (0, 0), 2.0)
+        a = cv.cvtColor(big[20:20 + height, 20:20 + width], cv.COLOR_GRAY2BGR)
+        b = cv.cvtColor(big[13:13 + height, 32:32 + width], cv.COLOR_GRAY2BGR)
+        self.start(0.0, a, (0.0, 0.0), 50.0, 0.0)
+        self.step(0.1, b, 50.0, 0.0)
+        self.step(0.2, a, 50.0, 0.0)
+        self.kf = self.kf_gray = self.pose = None
+        self.last = self.path = 0.0
+        self.keyframes = 0
+
     def start(self, t, img, xy, alt, heading, feat=None):
         # feat: the frame's features when the caller already computed them (keyframe switch)
         self.kf_gray = self._gray(img)
@@ -281,7 +300,20 @@ class VoNgpsFusionNode(Node):
             self.get_logger().error(f'vo_backend {g("vo_backend")!r} unavailable ({exc}); using opencv')
             self._status.send('VO: VPI unavailable, using CPU ORB', st.WARNING)
             self.vo = KeyframeVO(self.F, self.P, vmax=VMAX_MPS, backend='opencv')
-        self.get_logger().info(f'VO backend: {self.vo.backend}')
+        t0 = time.monotonic()
+        try:
+            self.vo.warm_up()
+            # the camera intake too: JPEG decode (full and JPEG-domain half size) and the resize
+            jpg = cv.imencode('.jpg', np.full((720, 1280, 3), 128, np.uint8))[1]
+            for flag in (cv.IMREAD_COLOR, cv.IMREAD_REDUCED_COLOR_2):
+                cv.resize(cv.imdecode(jpg, flag), (640, 360), interpolation=cv.INTER_AREA)
+        except Exception as exc:   # never fail startup over the warm-up; the first real frame then pays
+            self.get_logger().warning(f'VO warm-up failed: {exc}')
+        self.get_logger().info(f'VO backend: {self.vo.backend} (warmed up in {(time.monotonic() - t0) * 1e3:.0f} ms)')
+        if self.vo.fallback_reason:
+            self.get_logger().error(f'VPI VO failed during warm-up ({self.vo.fallback_reason}); using CPU ORB')
+            self._status.send('VO: GPU failed, now CPU ORB', st.WARNING)
+            self._fallback_reported = True
 
         # map
         self.map = cv.imread(g('reference_image_path'))
@@ -295,6 +327,13 @@ class VoNgpsFusionNode(Node):
         self.mpp = float(g('mosaic_meters_per_pixel'))
         from ap_ngps_ros2.trt_matcher import TrtMatcher
         self.trt = TrtMatcher(engine_path=g('tensorrt_engine_path'), match_threshold=float(g('match_threshold')), warmup=True)
+        try:   # TrtMatcher's own warm-up runs on zeros (no matches); one textured pair loads the match path too
+            rng = np.random.default_rng(1)
+            tex = cv.cvtColor(cv.GaussianBlur((rng.random((400, 680)) * 255).astype(np.uint8), (0, 0), 2.0),
+                              cv.COLOR_GRAY2BGR)
+            self.trt.match(tex[20:380, 20:660], tex[14:374, 31:671])
+        except Exception as exc:
+            self.get_logger().warning(f'TensorRT warm-up match failed: {exc}')
 
         self.terrain = None
         self.ground_rise = None     # ground here minus ground at takeoff, m (None: no correction)

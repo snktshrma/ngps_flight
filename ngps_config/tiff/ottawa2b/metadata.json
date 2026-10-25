@@ -1,0 +1,19 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "Mapbox satellite (Maxar-based) z20, site 2026-10-25 (Bells Corners); takeoff 45.347298,-75.915705",
+ "source": "mapbox",
+ "bounds": "-75.92548370361328,45.340321819804494,-75.90591430664062,45.35407536661815",
+ "center": "-75.915705,45.347298",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.10492,
+ "size_px": [
+  14592,
+  14592
+ ],
+ "site_px": [
+  7292,
+  7191
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-25"
+}

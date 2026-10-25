@@ -16,7 +16,9 @@ echo "=== $(date +%T) map compare on $BAG"
 MAPS=$(cd $R/ngps_config/tiff && ls -d ${SITE} ${SITE}_* 2>/dev/null | tr '\n' ' ')
 DEMS=$(ls $R/ngps_config/terrain/$SITE/dem.npz $R/ngps_config/terrain/$SITE/surface.npz 2>/dev/null | tr '\n' ' ')
 docker start vps-jp7 >/dev/null
-docker exec vps-jp7 bash -c "source /opt/ros/jazzy/setup.bash; source $WS/install/setup.bash; source $WS/install-jazzy/setup.bash; \
+# as the login user (by NAME, so the container applies its video/render groups: GPU access), not root:
+# ramguard can then stop this before it touches the flight stack
+docker exec -u "$(id -un)" -e HOME="$HOME" vps-jp7 bash -c "source /opt/ros/jazzy/setup.bash; source $WS/install/setup.bash; source $WS/install-jazzy/setup.bash; \
   cd $R && python3 ngps_config/tools/map_compare.py --bag '$BAG' --maps $MAPS --dem $DEMS --period 1.0 --min-alt 20" \
   2>&1 | grep -v 'TRT\] \[W'
 echo "=== $(date +%T) DONE"

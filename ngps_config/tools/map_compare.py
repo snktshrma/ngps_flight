@@ -11,6 +11,9 @@ match (VoNgpsFusionNode._ngps_candidate: same crop size, matcher and acceptance 
   * map minus truth (east, north): the map's offset, i.e. the offset_en_m to put in its metadata.json
     (median of the slow samples: at speed the camera lag smears it), with its spread.
 Any offset_en_m already in a map's metadata is ignored here; the numbers are the raw map error.
+--truth navsat takes the truth position from the raw GPS (/ap/navsat) instead of the EKF, for flights that
+used ExtNav (the EKF then follows VISION, not GPS); heading and height still come from the EKF.
+--t-start/--t-end (s after the first EKF pose) restrict the sampled frames, e.g. to hold out half a flight.
 --dem ngps_config/terrain/<site>/dem.npz [surface.npz ...] also runs every map with the node's terrain
 correction (terrain.py) from each model, as "<map>+<model>": compare match rate and fit scale (true/assumed
 height; ~1.0 = height right) with and without. surface.npz = ground + canopy (treetops).
@@ -31,8 +34,9 @@ import numpy as np
 import rosbag2_py
 import yaml
 from geographic_msgs.msg import GeoPointStamped, GeoPoseStamped
+from geometry_msgs.msg import TwistStamped
 from rclpy.serialization import deserialize_message
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, NavSatFix
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 sys.path.insert(0, os.path.join(ROOT, 'ap_ngps_ros2', 'src'))
@@ -53,8 +57,8 @@ def read_bag(path):
     r = rosbag2_py.SequentialReader()
     r.open(rosbag2_py.StorageOptions(uri=path, storage_id='mcap'), rosbag2_py.ConverterOptions('', ''))
     r.set_filter(rosbag2_py.StorageFilter(topics=['/ap/geopose/filtered', '/ap/gps_global_origin/filtered',
-                                                  '/camera/image_raw/compressed']))
-    geo, frames, origin = [], [], None
+                                                  '/camera/image_raw/compressed', '/ap/navsat', '/ap/twist/filtered']))
+    geo, frames, origin, nav, tw = [], [], None, [], []
     while r.has_next():
         topic, data, _ = r.read_next()
         if topic == '/ap/geopose/filtered':
@@ -67,10 +71,17 @@ def read_bag(path):
             m = deserialize_message(data, GeoPointStamped).position
             if ap_frame.valid_ll(m.latitude, m.longitude):
                 origin = (m.latitude, m.longitude, m.altitude)
+        elif topic == '/ap/twist/filtered':
+            m = deserialize_message(data, TwistStamped)
+            tw.append((stamp(m.header), math.hypot(m.twist.linear.x, m.twist.linear.y)))
+        elif topic == '/ap/navsat':
+            m = deserialize_message(data, NavSatFix)
+            if m.status.status >= 0 and ap_frame.valid_ll(m.latitude, m.longitude):
+                nav.append((stamp(m.header), m.latitude, m.longitude))
         else:
             m = deserialize_message(data, CompressedImage)
             frames.append((stamp(m.header), bytes(m.data)))
-    return np.array(geo), frames, origin
+    return np.array(geo), frames, origin, np.array(nav), np.array(tw)
 
 
 def matcher_ctx(map_name, params, trt, origin):
@@ -130,12 +141,22 @@ def main(argv=None):
     ap.add_argument('--min-alt', type=float, default=20.0, help='metres above the EKF origin')
     ap.add_argument('--dem', nargs='*', default=[],
                     help='terrain/surface model .npz files: also run each map corrected with each, as <map>+<file stem>')
+    ap.add_argument('--truth', choices=('geopose', 'navsat'), default='geopose',
+                    help='truth position: the EKF (a GPS flight) or the raw GPS /ap/navsat (flights with ExtNav)')
+    ap.add_argument('--t-start', type=float, default=-1e9, help='s after the first EKF pose: sample frames from here')
+    ap.add_argument('--t-end', type=float, default=1e9, help='s after the first EKF pose: sample frames up to here')
     a = ap.parse_args(argv)
 
     params = next(iter(yaml.safe_load(open(a.config)).values()))['ros__parameters']
-    geo, frames, origin = read_bag(os.path.abspath(a.bag))
+    geo, frames, origin, nav, twist = read_bag(os.path.abspath(a.bag))
     if origin is None or len(geo) == 0:
         sys.exit('bag has no EKF origin or geopose')
+    if a.truth == 'navsat':   # GPS lat/lon at the pose stamps; heading and height stay the EKF's
+        if len(nav) < 2:
+            sys.exit('bag has no /ap/navsat')
+        nav = nav[np.unique(nav[:, 0], return_index=True)[1]]
+        geo[:, 1] = np.interp(geo[:, 0], nav[:, 0], nav[:, 1])
+        geo[:, 2] = np.interp(geo[:, 0], nav[:, 0], nav[:, 2])
     print(f'{len(frames)} frames, {len(geo)} poses, origin {origin}')
 
     from ap_ngps_ros2.trt_matcher import TrtMatcher
@@ -147,14 +168,20 @@ def main(argv=None):
 
     t_geo = geo[:, 0]
     en = np.array([ap_frame.ll_to_en(origin, la, lo) for la, lo in geo[:, 1:3]])
-    vel = np.gradient(en, t_geo, axis=0)
+    # Horizontal speed: the EKF's own velocity. Not from differentiated positions: AP_DDS sends lat/lon in
+    # float32 (0.4-1.4 m steps), so np.gradient of them is 0 or ~20 m/s.
+    if len(twist):
+        speed_at = lambda t: float(np.interp(t, twist[:, 0], twist[:, 1]))
+    else:
+        speed_at = lambda t: float(np.hypot(*(np.array([np.interp(t + 0.5, t_geo, en[:, k]) for k in (0, 1)])
+                                             - np.array([np.interp(t - 0.5, t_geo, en[:, k]) for k in (0, 1)]))))
     rows = {v: [] for v, _, _ in variants}
     # takeoff point: where the EKF sat while armed on the ground is unknown here; the first pose below 1 m
     low = np.flatnonzero(geo[:, 3] - origin[2] < 1.0)
     takeoff = en[low[0]] if len(low) else en[0]
     next_t, decode = -1e18, cv.IMREAD_COLOR
     for ts, data in frames:
-        if ts < next_t or ts < t_geo[0] or ts > t_geo[-1]:
+        if ts < next_t or ts < t_geo[0] or ts > t_geo[-1] or not a.t_start <= ts - t_geo[0] <= a.t_end:
             continue
         i = int(np.clip(np.searchsorted(t_geo, ts), 1, len(t_geo) - 1))
         if abs(t_geo[i] - ts) > 0.2:
@@ -171,7 +198,7 @@ def main(argv=None):
         if img.shape[:2] != (360, 640):
             img = cv.resize(img, (640, 360), interpolation=cv.INTER_AREA)
         heading = (90.0 - geo[i, 4] + camera.YAW_OFFSET_DEG) % 360.0
-        speed = float(np.linalg.norm(vel[i]))
+        speed = speed_at(ts)
         for v, m, k in variants:
             h, rise = height_above_ground(alt, models[k], origin, takeoff, truth) if k else (alt, None)
             fix, why, sc = ctxs[m]._ngps_candidate(img, truth, heading, h)
@@ -181,7 +208,8 @@ def main(argv=None):
                 r['scale'] = sc
             rows[v].append(r)
     res = {'bag': os.path.abspath(a.bag), 'origin': origin, 'period_s': a.period, 'min_alt_m': a.min_alt,
-           'dem': a.dem, 'maps': {v: dict(summarise(rows[v]), description=ctxs[m].desc) for v, m, _ in variants}}
+           'dem': a.dem, 'truth': a.truth, 't_start_end': [a.t_start, a.t_end],
+           'maps': {v: dict(summarise(rows[v]), description=ctxs[m].desc) for v, m, _ in variants}}
     out = os.path.abspath(a.bag).rstrip('/') + '_map_compare.json'
     with open(out, 'w') as f:
         json.dump(dict(res, samples=rows), f)
