@@ -1,0 +1,23 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "Mapbox satellite (Maxar-based) z20, whole green box + margin (secondary plan); takeoff 45.317542,-75.756285",
+ "source": "mapbox",
+ "bounds": "-75.7730484008789,45.30749284107203,-75.75347900390625,45.321012959793734",
+ "center": "-75.763247,45.314263",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.10498,
+ "size_px": [
+  14592,
+  14336
+ ],
+ "site_px": [
+  7308,
+  7158
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-24",
+ "takeoff_px": [
+  12500,
+  3681
+ ]
+}

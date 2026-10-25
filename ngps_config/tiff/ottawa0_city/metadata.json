@@ -1,0 +1,19 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "City of Ottawa Aerial Imagery 2022, leaf-on, 20 cm (Source: City of Ottawa, maps.ottawa.ca) z20",
+ "source": "ottawa_ortho",
+ "bounds": "-75.76034545898438,45.3147361629512,-75.75244903564453,45.32028874948921",
+ "center": "-75.756285,45.317542",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.10498,
+ "size_px": [
+  5888,
+  5888
+ ],
+ "site_px": [
+  3028,
+  2913
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-24"
+}

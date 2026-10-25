@@ -1,0 +1,23 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "Mapbox satellite (Maxar-based) z19, covers Zone 2 + green 1 km box + audience area; takeoff 45.317542,-75.756285",
+ "source": "mapbox",
+ "bounds": "-75.77133178710938,45.30870012566984,-75.75210571289062,45.32221995639695",
+ "center": "-75.762034,45.315521",
+ "zoom_level": 19,
+ "meters_per_pixel": 0.20996,
+ "size_px": [
+  7168,
+  7168
+ ],
+ "site_px": [
+  3466,
+  3552
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-24",
+ "takeoff_px": [
+  5610,
+  2480
+ ]
+}

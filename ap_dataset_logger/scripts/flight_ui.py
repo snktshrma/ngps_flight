@@ -21,8 +21,9 @@ from urllib.parse import quote, unquote
 HERE = os.path.dirname(os.path.abspath(__file__))
 FLIGHT_LOG = os.path.join(HERE, 'flight_log.sh')
 WS = os.path.expanduser('~/ngps_ws')
-# Site map: nagano1 = 36.323136,138.618168 (from 2026-10-07); nagano0 = the first site. --fusion overrides.
-FUSION_CFG = os.path.join(WS, 'src/ngps_flight/ap_ngps_ros2/config/fusion_nagano1.yaml')
+# Site map: ottawa2b = Mapbox z20 1.5 km, Kanata site, takeoff 45.347004,-75.915600 (2026-10-25 Ottawa); ottawa1 = 2026-10-24/25
+# site 45.317542,-75.756285; nagano1, nagano0 = Japan sites. --fusion overrides.
+FUSION_CFG = os.path.join(WS, 'src/ngps_flight/ap_ngps_ros2/config/fusion_ottawa2b.yaml')
 BAGS = os.path.join(WS, 'src/ngps_flight/bags')
 UI_LOG = os.path.join(BAGS, 'flight_ui_action.log')
 FC = 'tcp:192.168.144.15:5760'
@@ -87,8 +88,9 @@ def run_action(name, fn):
 
 
 def do_start():
-    args = ['start', '--fc', 'udp:2019', '--fusion', FUSION_CFG, '--name', 'flight', '--archive',
-            '--check-timeout', '300']
+    # Same as the command-line starts since flight 6: no --archive (the extra H264 .mkv adds load and
+    # disk for nothing the post-flight tools use).
+    args = ['start', '--fc', 'udp:2019', '--fusion', FUSION_CFG, '--name', 'flight', '--check-timeout', '300']
     with open(UI_LOG, 'w') as log:
         p = subprocess.Popen([FLIGHT_LOG] + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         buf = ''

@@ -1,0 +1,14 @@
+# Flight-aware RAM guard (system/ramguard.py), as a USER service (no sudo needed):
+#   cp ~/ngps_ws/src/ngps_flight/system/ramguard.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ramguard.service
+#   loginctl enable-linger $USER     # once, so it runs at boot without a login
+[Unit]
+Description=RAM guard: stop non-flight processes above 90%% RAM, recorder at 95%%, flight stack only at 97%%
+
+[Service]
+ExecStart=/usr/bin/python3 %h/ngps_ws/src/ngps_flight/system/ramguard.py --threshold 90 --recorder-threshold 95 --flight-threshold 97
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
