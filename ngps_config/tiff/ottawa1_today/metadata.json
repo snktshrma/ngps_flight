@@ -1,0 +1,30 @@
+{
+ "name": "{z}/{x}/{y}",
+ "description": "today's camera mosaic (484 frames, flight11_20261025_044149) over ottawa1 (offset removed); Mapbox satellite (Maxar-based) z20, covers Zone 2 + green 1 km box + audience area; takeoff 45.317542,-75.756285",
+ "source": "mosaic+mapbox",
+ "bounds": "-75.77133178710938,45.308941579503745,-75.75244903564453,45.32221995639695",
+ "center": "-75.762034,45.315521",
+ "zoom_level": 20,
+ "meters_per_pixel": 0.10498,
+ "size_px": [
+  14080,
+  14080
+ ],
+ "site_px": [
+  6933,
+  7104
+ ],
+ "missing_tiles": 0,
+ "downloaded": "2026-10-25",
+ "takeoff_px": [
+  11220,
+  4961
+ ],
+ "offset_en_m": [
+  0.0,
+  0.0
+ ],
+ "offset_note": "GPS-consistent by construction: frames placed with GPS poses; base ottawa1 shifted by its offset E +1.38 N +2.15 m. Re-check with map_compare.py on a later flight.",
+ "mosaic_frames": 484,
+ "mosaic_coverage_ha": 6.0
+}

@@ -9,8 +9,10 @@ different value; change them here, and only after measuring.
 
 # Horizontal field of view at the 640 px working width, measured on flight 1.
 HFOV_DEG = 49.2
-# Image "up" relative to the vehicle's heading.
-YAW_OFFSET_DEG = 1.3
+# Image "up" relative to the vehicle's heading. 1.3 was the Japan value; Ottawa flights 11 and 12
+# showed VO rotated 3-6 deg clockwise of GPS on every heading, and replaying flight 12 at -3.7 cut
+# the median error vs GPS from 9.4 to 3.4 m (2026-10-26). Re-check at a new site or after a remount.
+YAW_OFFSET_DEG = -3.7
 # The camera points ~3 deg off nadir: the pixel below the aircraft, as a fraction of
 # the image size from the centre (+x right, +y down). Fitted on flight 1's climb and
 # checked on its descent.

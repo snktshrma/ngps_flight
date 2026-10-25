@@ -38,6 +38,9 @@ SOURCES = {
                      'GSI seamlessphoto (Source: GSI tiles / 出典：地理院タイル)'),
     'gsi_2019': ('https://cyberjapandata.gsi.go.jp/xyz/nendophoto2019/{z}/{x}/{y}.png', 18,
                  'GSI nendophoto2019 aerial ortho (Source: GSI tiles / 出典：地理院タイル)'),
+    # ArcGIS tile cache whose LOD 0 is web-mercator z9, hence {lod9} = z - 9
+    'ottawa_ortho': ('https://maps.ottawa.ca/arcgis/rest/services/Basemap_Imagery_2022/MapServer/tile/{lod9}/{y}/{x}', 20,
+                     'City of Ottawa Aerial Imagery 2022, leaf-on, 20 cm (Source: City of Ottawa, maps.ottawa.ca)'),
 }
 UA = {'User-Agent': 'ngps-flight-map/1.0'}
 
@@ -119,7 +122,7 @@ def main(argv=None):
     def get(xy):
         x, y = xy
         try:
-            return xy, Image.open(io.BytesIO(fetch(tmpl.format(z=z, x=x, y=y, token=token)))).convert('RGB')
+            return xy, Image.open(io.BytesIO(fetch(tmpl.format(z=z, x=x, y=y, token=token, lod9=z - 9)))).convert('RGB')
         except Exception as exc:  # noqa: BLE001
             return xy, exc
     mosaic = Image.new('RGB', (nx * 256, ny * 256))

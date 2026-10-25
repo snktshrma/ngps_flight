@@ -90,3 +90,24 @@ def test_scale_change_waits_for_the_next_keyframe():
     vo.start(0.2, a, (0.0, 0.0), 50.0, 0.0)          # next keyframe latches the new scale
     assert vo.step(0.3, b, 50.0, 0.0)
     assert np.allclose(vo.pose, [12 * sc * 1.10, 7 * sc * 1.10], atol=0.05)
+
+
+def test_warm_up_leaves_a_fresh_vo():
+    vo = fusion.KeyframeVO(F, P, vmax=100.0, backend='opencv')
+    vo.warm_up()
+    assert vo.kf is None and vo.pose is None and vo.keyframes == 0 and vo.path == 0.0
+    assert vo.backend == 'opencv' and vo.fallback_reason is None
+    # and it still works exactly as before afterwards
+    big = textured()
+    a, b = big[40:40 + H, 40:40 + W].copy(), big[33:33 + H, 52:52 + W].copy()
+    vo.start(0.0, a, (0.0, 0.0), 50.0, 0.0)
+    assert vo.step(0.1, b, 50.0, 0.0)
+    sc = 50.0 / F
+    assert np.allclose(vo.pose, [12 * sc, 7 * sc], atol=0.05)
+
+
+@pytest.mark.skipif(not _vpi_available(), reason='NVIDIA VPI not installed')
+def test_warm_up_on_vpi_keeps_the_gpu_backend():
+    vo = fusion.KeyframeVO(F, P, vmax=100.0, backend='vpi_cuda')
+    vo.warm_up()
+    assert vo.backend == 'vpi_cuda' and vo.fallback_reason is None and vo.kf is None
