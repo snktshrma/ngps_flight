@@ -1,0 +1,81 @@
+name: autotest
+
+on:
+  push:
+    branches: [main, 'dev/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: autotest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast pass: everything that runs on plain Python. Tests needing rclpy/GStreamer skip here.
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ci/requirements-test.txt
+      - run: pip install -r ci/requirements-test.txt
+      - run: python -m pytest -v --junitxml=pytest-unit.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-unit
+          path: pytest-unit.xml
+
+  # Full pass on ROS 2 Jazzy: builds the packages and runs the rclpy/GStreamer tests too.
+  ros-jazzy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container: ros:jazzy-ros-base
+    defaults:
+      run:
+        shell: bash
+    env:
+      WS: /ws
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/ngps_flight
+      - name: Link workspace
+        run: mkdir -p $WS/src && ln -s $GITHUB_WORKSPACE/src/ngps_flight $WS/src/ngps_flight
+      - name: Fetch ardupilot_msgs
+        # Not released in rosdistro; same fork/branch as ros2.jazzy.repos
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse -b dev/sat-cam \
+            https://github.com/snktshrma/ardupilot.git /tmp/ardupilot
+          git -C /tmp/ardupilot sparse-checkout set Tools/ros2/ardupilot_msgs
+          cp -r /tmp/ardupilot/Tools/ros2/ardupilot_msgs $WS/src/
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            python3-pytest python3-pyproj python3-opencv python3-yaml python3-numpy \
+            python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths $WS/src --ignore-src -y -r \
+            -t build -t buildtool -t build_export
+      - name: Build
+        working-directory: /ws
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --event-handlers console_direct+ \
+            --packages-up-to ap_ngps_ros2 ap_dataset_logger ardupilot_msgs
+      - name: Test
+        working-directory: /ws/src/ngps_flight
+        run: |
+          source /ws/install/setup.bash
+          python3 -m pytest -v --junitxml=$GITHUB_WORKSPACE/pytest-ros.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-ros-jazzy
+          path: pytest-ros.xml
