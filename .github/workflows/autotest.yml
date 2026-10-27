@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -25,7 +25,7 @@ jobs:
       - run: pip install -r ci/requirements-test.txt
       - run: python -m pytest -v --junitxml=pytest-unit.xml
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pytest-unit
           path: pytest-unit.xml
@@ -41,7 +41,7 @@ jobs:
     env:
       WS: /ws
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: src/ngps_flight
       - name: Link workspace
@@ -70,12 +70,13 @@ jobs:
           colcon build --event-handlers console_direct+ \
             --packages-up-to ap_ngps_ros2 ap_dataset_logger ardupilot_msgs
       - name: Test
-        working-directory: /ws/src/ngps_flight
+        # The real checkout, not the /ws symlink: conftest.py's collect_ignore paths are resolved against it
+        working-directory: src/ngps_flight
         run: |
           source /ws/install/setup.bash
           python3 -m pytest -v --junitxml=$GITHUB_WORKSPACE/pytest-ros.xml
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pytest-ros-jazzy
           path: pytest-ros.xml
