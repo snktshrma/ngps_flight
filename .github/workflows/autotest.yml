@@ -1,8 +1,9 @@
 name: autotest
 
 on:
+  # Every branch, in this repo and in forks; '**' leaves out tag pushes
   push:
-    branches: [main, 'dev/**']
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
