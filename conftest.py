@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent
 
 # Import the packages from source so the tests also run without a colcon install
@@ -21,8 +23,9 @@ if not all(importlib.util.find_spec(m) for m in ('tensorrt', 'pycuda')):
     SKIP.add('ap_ngps_ros2/test/test_trt_unit.py')
 
 
-# A hook rather than collect_ignore: ROS's pytest plugins (launch_testing, ament_*) answer
-# pytest_ignore_collect first, so pytest's own collect_ignore check never runs under ROS.
+# A tryfirst hook rather than collect_ignore: launch_testing's own tryfirst pytest_ignore_collect
+# returns False for every path, which ends the hook before pytest's collect_ignore check runs.
+@pytest.hookimpl(tryfirst=True)
 def pytest_ignore_collect(collection_path, config):
     try:
         rel = Path(collection_path).resolve().relative_to(ROOT).as_posix()
