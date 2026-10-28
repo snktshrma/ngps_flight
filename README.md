@@ -1,6 +1,8 @@
 # NGPS: Next-Generation Positioning System
 
 <div align="center">
+  
+<img width="1200" height="600" alt="NGPS Drone Positioning Logo" src="https://github.com/user-attachments/assets/ecdcefaa-8455-4e3a-a9b7-24dcaf2b5604" />
 
 [![arXiv](https://img.shields.io/badge/arXiv-2607.18936-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2607.18936)
 [![autotest](https://github.com/snktshrma/ngps_flight/actions/workflows/autotest.yml/badge.svg)](https://github.com/snktshrma/ngps_flight/actions/workflows/autotest.yml)
