@@ -1,0 +1,32 @@
+{
+ "source": "GSI dem5a z15 (~3.8 m/px), gaps from dem10b; 出典：地理院タイル",
+ "bounds": [
+  138.603515625,
+  36.3151251474805,
+  138.62548828125,
+  36.33282808737918
+ ],
+ "shape": [
+  512,
+  512
+ ],
+ "centre_lat_lon": [
+  36.323136,
+  138.618168
+ ],
+ "ground_at_centre_m": 921.1,
+ "dem5a_holes_filled": 67507,
+ "unknown_cells": 0,
+ "within_50m": {
+  "min": -5.5,
+  "max": 2.7
+ },
+ "within_150m": {
+  "min": -6.6,
+  "max": 22.8
+ },
+ "within_300m": {
+  "min": -8.5,
+  "max": 24.6
+ }
+}
