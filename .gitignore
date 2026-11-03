@@ -1,5 +1,6 @@
-mav*
-terrain/
+/mav.tlog*
+/mav.parm
+/terrain/
 __pycache__/
 eeprom.bin
 **/__pycache__/

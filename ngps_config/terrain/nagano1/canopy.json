@@ -1,0 +1,113 @@
+{
+ "name": "nagano1",
+ "centre_lat": 36.323136,
+ "centre_lon": 138.618168,
+ "half_size_m": 400.0,
+ "res_m": 1.0,
+ "shape": [
+  800,
+  800
+ ],
+ "bounds": [
+  138.61371338,
+  36.31953126,
+  138.62262262,
+  36.32674074
+ ],
+ "primary": "meta",
+ "sources": {
+  "meta": {
+   "source": "Meta/WRI High Resolution Canopy Height Maps v1 (alsgedi_global_v6_float), ~1 m, CHM (canopy above ground)",
+   "attribution": "Tolan et al. 2024, Remote Sens. Environ. 300:113888; data (c) Meta and World Resources Institute, via AWS Open Data s3://dataforgood-fb-data/forests/v1/",
+   "licence": "CC BY 4.0",
+   "url": "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/133002101.tif",
+   "quadkey_z9": "133002101",
+   "native_res": "1.194 m web-mercator (~0.96 m ground here)",
+   "resampling": "bilinear",
+   "acquisition_date_raw": 18.91666603088379
+  },
+  "eth": {
+   "source": "ETH Global Canopy Height 2020 (Lang et al.), 10 m",
+   "attribution": "Lang, Jetz, Schindler, Wegner 2023, Nat. Ecol. Evol. 7:1778-1789; data doi:10.3929/ethz-b-000609802",
+   "licence": "CC BY 4.0",
+   "url": "https://libdrive.ethz.ch/index.php/s/cO8or7iOe5dT2Rt/download?path=%2F3deg_cogs&files=ETH_GlobalCanopyHeight_10m_2020_N36E138_Map.tif",
+   "tile": "N36E138",
+   "native_res": "1/12000 deg (~7.5 x 9.3 m here)",
+   "resampling": "nearest"
+  }
+ },
+ "note": "canopy height above bare ground (not AMSL); add to GSI dem5a ground for surface height",
+ "stats": {
+  "meta": {
+   "centre_m": 0.0,
+   "box_pm5m": {
+    "median": 0.0,
+    "p90": 0.0,
+    "max": 0.0,
+    "mean": 0.0,
+    "frac_over_5m": 0.0,
+    "valid_frac": 1.0
+   },
+   "box_pm50m": {
+    "median": 0.0,
+    "p90": 5.08,
+    "max": 12.0,
+    "mean": 1.17,
+    "frac_over_5m": 0.103,
+    "valid_frac": 1.0
+   },
+   "box_pm150m": {
+    "median": 2.0,
+    "p90": 14.33,
+    "max": 25.0,
+    "mean": 5.02,
+    "frac_over_5m": 0.399,
+    "valid_frac": 1.0
+   },
+   "box_pm400m": {
+    "median": 2.85,
+    "p90": 13.0,
+    "max": 26.0,
+    "mean": 4.98,
+    "frac_over_5m": 0.425,
+    "valid_frac": 1.0
+   }
+  },
+  "eth": {
+   "centre_m": 20.0,
+   "box_pm5m": {
+    "median": 20.0,
+    "p90": 20.0,
+    "max": 20.0,
+    "mean": 18.4,
+    "frac_over_5m": 1.0,
+    "valid_frac": 1.0
+   },
+   "box_pm50m": {
+    "median": 20.0,
+    "p90": 24.0,
+    "max": 28.0,
+    "mean": 16.86,
+    "frac_over_5m": 0.889,
+    "valid_frac": 1.0
+   },
+   "box_pm150m": {
+    "median": 23.0,
+    "p90": 27.0,
+    "max": 29.0,
+    "mean": 21.99,
+    "frac_over_5m": 0.985,
+    "valid_frac": 1.0
+   },
+   "box_pm400m": {
+    "median": 23.0,
+    "p90": 27.0,
+    "max": 29.0,
+    "mean": 22.68,
+    "frac_over_5m": 0.998,
+    "valid_frac": 0.994
+   }
+  },
+  "eth_sd_pm150m_median": 10.0
+ }
+}
